@@ -1,8 +1,8 @@
 # Workflow
 
-## Create source mka
+I personally recommend to have to copies of your audiobooks. The original one for storage in the best quality you have available and one working copy with the opus codec for a small file size which you can easily use on your devices without juggling gigabytes of data for just one simple audiobook. Therefore we first create the source mka for storage and use it after that to create the working copy. You can repeat the creation of the working copy at a later point in time to get better ones as codecs and technology evolve.
 
-I personally recommend to have to copies of your audiobooks. The original one for storage in the best quality you have available and one working copy with the opus codec for a small file size which you can easily use on your devices without juggling gigabytes of data for just one simple audiobook. Therefore we have to at first create the source mka for storage which you can later use to create even better working copies as codecs and technology evolve.
+## Create source mka
 
 ### flac input
 
