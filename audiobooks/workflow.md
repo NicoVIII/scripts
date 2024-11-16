@@ -1,9 +1,12 @@
 # Workflow
 
-## flac input
+## Create source mka
 
-This describes the workflow I typically use to create a flac-mka and a opus-mka from
-a list of flac files for each chapter of a audiobook.
+I personally recommend to have to copies of your audiobooks. The original one for storage in the best quality you have available and one working copy with the opus codec for a small file size which you can easily use on your devices without juggling gigabytes of data for just one simple audiobook. Therefore we have to at first create the source mka for storage which you can later use to create even better working copies as codecs and technology evolve.
+
+### flac input
+
+If you have a list of flac files for each chapter of an audiobook, do this:
 
 1. Run `merge_flac.sh` to merge the flac files into a single flac file and create chapters
 2. Use MKVToolNix to create the flac-mka
@@ -14,8 +17,6 @@ a list of flac files for each chapter of a audiobook.
     * Set chapter language (optional)
     * Add the cover image (optional)
     * Set the file name
-3. Use `mka_to_opus.sh` to create the opus-mka
-4. Use MKVToolNix header editor to add the cover image again (optional)
 
 ## m4b input
 
@@ -23,5 +24,10 @@ If you already have a single chaptered m4b file you can simply use ffmpeg to con
 
 1. Run `ffmpeg -i <input_file> -c copy <output_file>.mka`
 2. Use MKVToolNix header editor to add the cover image again (optional)
-3. Use `mka_to_opus.sh` to create the opus-mka
-4. Use MKVToolNix header editor to add the cover image again (optional)
+
+## Create working copy mka
+
+For now I recommend using opus, if your devices support it because it offers great quality in small file sizes.
+
+1. Use `mka_to_opus.sh` to create the opus mka from your source mka (You can provide the bitrate as second parameter: I recommend using 32k bitrate for audiobooks and 64k für radio plays)
+2. Use MKVToolNix header editor to add the cover image again (optional)
