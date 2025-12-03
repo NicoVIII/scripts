@@ -8,16 +8,16 @@ set -e
 [ "$#" -ge 1 ] && [ "$#" -le 2 ] || (echo "Usage: ./mka_to_opus.sh <input_file> [bit_rate]" && exit 1)
 
 input_file="$1"
-bitrate="${2:-32}"
+bitrate="${2:-48}"
 
 filename=$(basename --suffix=".mka" "$input_file")
 output_file="$filename.opus"
 
 echo "Extract cover image..."
-ffmpeg -v warning -i "$input_file" -map 0:v -c:v copy -y "temp_cover.jpg" -v 0
+ffmpeg -v warning -i "$input_file" -map 0:v -c:v copy -y "$filename.cover.jpg" -v 0
 echo "Converting '$input_file' to '$output_file' with bitrate $bitrate..."
 ffmpeg -i "$input_file" -f wav - 2> /dev/null | \
- opusenc --bitrate "$bitrate" --picture "temp_cover.jpg" - "$output_file"
+ opusenc --bitrate "$bitrate" --picture "$filename.cover.jpg" - "$output_file"
 echo "Removing temporary files..."
-rm "temp_cover.jpg"
+rm "$filename.cover.jpg"
 echo "Done."
