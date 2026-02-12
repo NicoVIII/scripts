@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# This script is used to convert a .mka file to a smaller .mka file with libopus codec inside
+# This script is used to convert a .mka file to a smaller file with opus
 # I use 32k for podcasts / audiobooks and 48k for radio plays
 # Have a look at https://wiki.xiph.org/Opus_Recommended_Settings for recommended settings
 # for different types of audio
