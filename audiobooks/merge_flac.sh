@@ -18,8 +18,9 @@ path=$(echo "$1" | sed 's:/*$::')
 > "$path/ffmpeg_input.txt"
 current_time=0
 current_chapter=1
-for FILE in "$path"/*.flac
-do
+
+# Use version sort to get files in human-friendly order
+while IFS= read -r FILE; do
   # Prepare input file for ffmpeg
   printf "file '%s'\n" "$(basename "$FILE" | sed "s/'/'\\\\''/g")" >> "$path/ffmpeg_input.txt"
 
@@ -41,7 +42,7 @@ do
 
   current_time=$(($current_time + $length))
   current_chapter=$(($current_chapter + 1))
-done
+done < <(find "$path" -maxdepth 1 -name '*.flac' | sort -V)
 
 ffmpeg -f concat -safe 0 -i "$path/ffmpeg_input.txt" -vn ./merged.flac
 
