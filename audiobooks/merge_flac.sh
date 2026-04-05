@@ -47,4 +47,4 @@ done < <(find "$path" -maxdepth 1 -name '*.flac' | sort -V)
 ffmpeg -f concat -safe 0 -i "$path/ffmpeg_input.txt" -vn ./merged.flac
 
 # Clean up
-rm "$path/ffmpeg_input.txt" 
+rm "$path/ffmpeg_input.txt"
