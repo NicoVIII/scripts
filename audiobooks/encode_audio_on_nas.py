@@ -9,6 +9,7 @@ import sys
 import subprocess
 import tempfile
 import shutil
+import threading
 from pathlib import Path
 from getpass import getpass
 from typing import Optional, Tuple, List
@@ -43,7 +44,7 @@ SHARE_CONFIGS: List[Tuple[str, List[str], str]] = [
 # ============================================================================
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
+    format="%(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -77,18 +78,17 @@ def mount_samba_share(server: str, share_name: str, credentials: Tuple[str, str]
                     f"uid={os.getuid()},gid={os.getgid()},"
                     f"iocharset=utf8,vers={smb_version},sec={smb_sec}"
                 )
-                mount_cmd = ["sudo", "mount.cifs", unc_path, mount_point, "-o", options]
+                mount_cmd = ["sudo", "-n", "mount.cifs", unc_path, mount_point, "-o", options]
 
                 try:
                     subprocess.run(mount_cmd, check=True, capture_output=True)
                     logger.info(
-                        f"Mounted Samba share at {mount_point} "
-                        f"(SMB {smb_version}, sec={smb_sec})"
+                        f"Mounted //{server}/{share_name}"
                     )
                     return mount_point
                 except subprocess.CalledProcessError as e:
                     last_error = e.stderr.decode(errors="replace").strip()
-                    logger.warning(
+                    logger.debug(
                         f"Mount failed with SMB {smb_version}, sec={smb_sec} "
                         f"for {unc_path}: {last_error}"
                     )
@@ -108,11 +108,31 @@ def mount_samba_share(server: str, share_name: str, credentials: Tuple[str, str]
 def unmount_samba_share(mount_point: str) -> None:
     """Unmount Samba share."""
     try:
-        subprocess.run(["sudo", "umount", mount_point], check=True, capture_output=True)
-        logger.info(f"Unmounted Samba share from {mount_point}")
+        subprocess.run(["sudo", "-n", "umount", mount_point], check=True, capture_output=True)
+        logger.info("Unmounted share")
         shutil.rmtree(mount_point, ignore_errors=True)
     except subprocess.CalledProcessError as e:
         logger.warning(f"Failed to unmount {mount_point}: {e.stderr.decode()}")
+
+
+def ensure_sudo_session() -> None:
+    """Ask for sudo password once and validate cached credentials."""
+    try:
+        subprocess.run(["sudo", "-v"], check=True)
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f"Could not initialize sudo session: {e}") from e
+
+
+def start_sudo_keepalive(stop_event: threading.Event, interval_seconds: int = 60) -> threading.Thread:
+    """Refresh sudo timestamp in the background so long runs stay unattended."""
+
+    def _worker() -> None:
+        while not stop_event.wait(interval_seconds):
+            subprocess.run(["sudo", "-n", "true"], check=False, capture_output=True)
+
+    thread = threading.Thread(target=_worker, name="sudo-keepalive", daemon=True)
+    thread.start()
+    return thread
 
 def find_mka_files(mount_point: str, subfolder: str) -> List[Tuple[str, str]]:
     """
@@ -164,9 +184,8 @@ def m4a_file_exists_in_subfolder(mount_point: str, subfolder: str, filename_stem
     subfolder_path = os.path.join(mount_point, subfolder)
     target_name = f"{filename_stem}.m4a"
     
-    for root, _, files in os.walk(subfolder_path):
+    for _, _, files in os.walk(subfolder_path):
         if target_name in files:
-            logger.info(f"Found existing .m4a file: {os.path.join(root, target_name)}")
             return True
     
     return False
@@ -203,7 +222,7 @@ def convert_mka_to_m4a(local_mka: str, bitrate: str, script_dir: str) -> Optiona
         m4a_file = os.path.join(tmp_dir, f"{mka_stem}.m4a")
         
         if os.path.isfile(m4a_file):
-            logger.info(f"Conversion successful: {m4a_file}")
+            logger.debug(f"Conversion successful: {m4a_file}")
             return m4a_file
         else:
             logger.error("Conversion script did not produce output file")
@@ -220,7 +239,7 @@ def copy_m4a_to_samba(local_m4a: str, output_samba_path: str) -> bool:
     try:
         os.makedirs(os.path.dirname(output_samba_path), exist_ok=True)
         shutil.copy2(local_m4a, output_samba_path)
-        logger.info(f"Copied to Samba: {output_samba_path}")
+        logger.debug(f"Copied to Samba: {output_samba_path}")
         return True
     except Exception as e:
         logger.error(f"Failed to copy {local_m4a} to {output_samba_path}: {e}")
@@ -238,7 +257,7 @@ def cleanup_duplicate_formats(output_path: str, mount_point: str, subfolder: str
         if os.path.isfile(duplicate_file):
             try:
                 os.remove(duplicate_file)
-                logger.info(f"Deleted duplicate: {duplicate_file}")
+                logger.debug(f"Deleted duplicate: {duplicate_file}")
             except Exception as e:
                 logger.warning(f"Failed to delete {duplicate_file}: {e}")
 
@@ -258,10 +277,10 @@ def process_file(
     
     # Check if .m4a already exists in the subfolder
     if m4a_file_exists_in_subfolder(mount_point, subfolder, filename_stem):
-        logger.info(f"Skipping {input_relative_path} (m4a already exists)")
+        logger.info(f"SKIP {input_relative_path}")
         return True
     
-    logger.info(f"Processing: {input_relative_path}")
+    logger.info(f"RUN  {input_relative_path}")
     
     # Create local tmp directory for this conversion
     with tempfile.TemporaryDirectory(prefix="mka_convert_") as tmp_dir:
@@ -287,7 +306,7 @@ def process_file(
             # Cleanup duplicate formats
             cleanup_duplicate_formats(output_samba_path, mount_point, subfolder)
             
-            logger.info(f"Successfully processed: {input_relative_path}")
+            logger.info(f"OK   {input_relative_path}")
             return True
         
         except Exception as e:
@@ -296,10 +315,10 @@ def process_file(
 
 def main() -> None:
     script_dir = os.path.dirname(os.path.abspath(__file__))
+    sudo_keepalive_stop = threading.Event()
     try:
         # Prompt for credentials
-        logger.info("Samba Share Audio Converter")
-        logger.info("=" * 60)
+        logger.info("Samba audio converter")
         print()
         username = input("Samba username: ").strip()
         password = getpass("Samba password: ")
@@ -307,6 +326,10 @@ def main() -> None:
         if not username or not password:
             logger.error("Username and password are required")
             sys.exit(1)
+
+        logger.info("Authorizing sudo once for mount/unmount...")
+        ensure_sudo_session()
+        start_sudo_keepalive(sudo_keepalive_stop)
         
         credentials = (username, password)
         
@@ -316,7 +339,7 @@ def main() -> None:
         for share_name, subfolders, bitrate in SHARE_CONFIGS:
             mount_point: Optional[str] = None
             try:
-                logger.info(f"\nConnecting to //{SMB_SERVER}/{share_name}...")
+                logger.info(f"\nShare //{SMB_SERVER}/{share_name}")
                 mount_point = mount_samba_share(SMB_SERVER, share_name, credentials)
             except RuntimeError as e:
                 logger.error(
@@ -328,8 +351,7 @@ def main() -> None:
                 for subfolder in subfolders:
                     display_subfolder = subfolder if subfolder else "/"
                     logger.info(
-                        f"\nProcessing share '{share_name}', subfolder: {display_subfolder} "
-                        f"(bitrate: {bitrate})"
+                        f"Subfolder {display_subfolder} | bitrate {bitrate}"
                     )
 
                     # Find all .mka files
@@ -361,8 +383,7 @@ def main() -> None:
                     unmount_samba_share(mount_point)
         
         # Summary
-        logger.info("\n" + "=" * 60)
-        logger.info(f"Summary: {processed_files}/{total_files} files processed successfully")
+        logger.info(f"\nDone: {processed_files}/{total_files} successful")
     except KeyboardInterrupt:
         logger.info("\nCancelled by user")
         sys.exit(0)
@@ -370,7 +391,7 @@ def main() -> None:
         logger.error(f"Fatal error: {e}", exc_info=True)
         sys.exit(1)
     finally:
-        pass
+        sudo_keepalive_stop.set()
 
 if __name__ == "__main__":
     main()

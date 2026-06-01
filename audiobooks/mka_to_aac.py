@@ -23,6 +23,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("input_file", help="Input .mka file (absolute or relative path)")
     parser.add_argument("bitrate", help="Target bitrate, e.g. 48k or 64k")
+    parser.add_argument(
+        "--no-cover",
+        action="store_true",
+        help="Do not attempt to preserve embedded cover art.",
+    )
     return parser.parse_args()
 
 def validate_bitrate(bitrate: str) -> bool:
@@ -86,6 +91,55 @@ def run_conversion_with_progress(docker_cmd: list[str]) -> tuple[int, str]:
 
     return process.wait(), "".join(stderr_lines)
 
+
+def build_docker_cmd(
+    work_dir: Path,
+    input_file: str,
+    output_file: str,
+    bitrate: str,
+    include_cover: bool,
+) -> list[str]:
+    cmd: list[str] = [
+        "docker",
+        "run",
+        "--rm",
+        "--user",
+        f"{os.getuid()}:{os.getgid()}",
+        "-v",
+        f"{work_dir}:/workspace",
+        "-w",
+        "/workspace",
+        "jrottenberg/ffmpeg:ubuntu",
+        "-y",
+        "-i",
+        input_file,
+        "-map",
+        "0:a:0",
+        "-sn",
+        "-dn",
+        "-c:a",
+        "libfdk_aac",
+        "-profile:a",
+        "aac_he_v2",
+        "-b:a",
+        bitrate,
+    ]
+
+    if include_cover:
+        cmd.extend([
+            "-map",
+            "0:v:0?",
+            "-c:v",
+            "copy",
+            "-disposition:v:0",
+            "attached_pic",
+        ])
+    else:
+        cmd.append("-vn")
+
+    cmd.append(output_file)
+    return cmd
+
 def main() -> int:
     args = parse_args()
 
@@ -117,37 +171,44 @@ def main() -> int:
     input_file = input_path.name
     output_file = f"{input_path.stem}.m4a"
 
-    docker_cmd: list[str] = [
-        "docker",
-        "run",
-        "--rm",
-        "--user",
-        f"{os.getuid()}:{os.getgid()}",
-        "-v",
-        f"{work_dir}:/workspace",
-        "-w",
-        "/workspace",
-        "jrottenberg/ffmpeg:ubuntu",
-        "-y",
-        "-i",
-        input_file,
-        "-c:a",
-        "libfdk_aac",
-        "-profile:a",
-        "aac_he_v2",
-        "-b:a",
-        args.bitrate,
-        output_file,
-    ]
+    output_path = work_dir / output_file
+    try_cover = not args.no_cover
 
-    return_code, ffmpeg_stderr = run_conversion_with_progress(docker_cmd)
+    return_code = 0
+    ffmpeg_stderr = ""
+
+    if try_cover:
+        cover_cmd = build_docker_cmd(
+            work_dir=work_dir,
+            input_file=input_file,
+            output_file=output_file,
+            bitrate=args.bitrate,
+            include_cover=True,
+        )
+        return_code, ffmpeg_stderr = run_conversion_with_progress(cover_cmd)
+        if return_code != 0:
+            print(
+                "Warning: could not preserve embedded cover art; retrying audio-only.",
+                file=sys.stderr,
+            )
+            output_path.unlink(missing_ok=True)
+
+    if return_code != 0 or not try_cover:
+        audio_only_cmd = build_docker_cmd(
+            work_dir=work_dir,
+            input_file=input_file,
+            output_file=output_file,
+            bitrate=args.bitrate,
+            include_cover=False,
+        )
+        return_code, ffmpeg_stderr = run_conversion_with_progress(audio_only_cmd)
+
     if return_code != 0:
         print(f"Error: conversion failed with exit code {return_code}.", file=sys.stderr)
         if ffmpeg_stderr.strip():
             print(ffmpeg_stderr, file=sys.stderr)
         return return_code
 
-    output_path = work_dir / output_file
     if not output_path.is_file() or output_path.stat().st_size == 0:
         print(
             "Error: conversion completed but output file is missing or empty: "
