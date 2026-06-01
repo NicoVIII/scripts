@@ -1,0 +1,20 @@
+{
+  "tasks": {
+    "dev": "deno run --watch --allow-net main.ts"
+  },
+  "compilerOptions": {
+    "noUncheckedIndexedAccess": true
+  },
+  "imports": {
+    "@david/dax": "jsr:@david/dax@^0.48.2",
+    "@std/assert": "jsr:@std/assert@1",
+    "@std/cli": "jsr:@std/cli@^1.0.30",
+    "@std/path": "jsr:@std/path@^1.1.5",
+    "typescript-result": "npm:typescript-result@^3.5.2"
+  },
+  "lint": {
+    "rules": {
+      "tags": ["recommended"]
+    }
+  }
+}
