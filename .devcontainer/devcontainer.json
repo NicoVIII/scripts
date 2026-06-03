@@ -5,7 +5,10 @@
   // Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
   "image": "mcr.microsoft.com/devcontainers/base:resolute",
   "features": {
-    "ghcr.io/devcontainers-extra/features/deno:1": {}
+    "ghcr.io/devcontainers-extra/features/deno:1": {},
+    "ghcr.io/nicoviii/devcontainer-features/oxlint:0": {
+      "version": "1.68.0"
+    }
   },
   // Features to add to the dev container. More info: https://containers.dev/features.
   // "features": {},
@@ -13,6 +16,7 @@
   // "forwardPorts": [],
   // Use 'postCreateCommand' to run commands after the container is created.
   // "postCreateCommand": "uname -a",
+  "postStartCommand": "deno install",
   // Configure tool-specific properties.
   "customizations": {
     "vscode": {
