@@ -46,17 +46,23 @@ FlacToMka :: {}.{
 			_ => prepared.folder.filename().map_ok(Path.display) ?? ""
 		}
 
-	## An empty `title` or `language` leaves that field unset.
+	## One per FLAC file, from its TITLE tag or else its file name.
+	chapter_names : { infos : List({ path : Str, title : Try(Str, _), .. }), .. } -> List(Str)
+	chapter_names = |prepared| prepared.infos.map(|info| info.title ?? filename_stem(info.path))
+
+	## An empty `title` or `language` leaves that field unset. `chapter_names`
+	## go with the FLAC files in order, e.g. from `chapter_names` or
+	## `Chapters.clean` of them.
 	write! : {
 		infos : List({ path : Str, title : Try(Str, _), duration : Duration, .. }),
 		cover : { path : Path, mime_type : Str, attachment_name : Str },
 		..
-	}, { output : Path, title : Str, language : Str } => Try({}, _)
+	}, { output : Path, title : Str, language : Str, chapter_names : List(Str) } => Try({}, _)
 	write! = |prepared, spec|
 		WorkDir.in_cwd!(
 			|work_dir| {
 				chapters = work_dir.join("chapters.txt")
-				chapters.write_utf8!(Chapters.to_ogm(prepared.infos.map(|info| { title: info.title ?? filename_stem(info.path), duration: info.duration })))?
+				chapters.write_utf8!(Chapters.to_ogm(List.map2(spec.chapter_names, prepared.infos, |name, info| { title: name, duration: info.duration })))?
 				audio = work_dir.join("merged.flac")
 				Ffmpeg.concat!(prepared.infos.map(|info| info.path), work_dir, audio)?
 				Mkvmerge.mux!({ output: spec.output, title: spec.title, language: spec.language, audio, chapters, cover: prepared.cover })

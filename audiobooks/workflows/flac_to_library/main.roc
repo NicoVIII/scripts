@@ -14,6 +14,7 @@ import pf.Path
 import pf.Stdout
 import pf.Stderr
 import shared.Aac
+import shared.Chapters
 import shared.FlacToMka
 import shared.Mkvmerge
 import shared.Prompt
@@ -40,6 +41,20 @@ ask_language! = || {
 
 parse_number : Str -> Try(U64, Str)
 parse_number = |answer| U64.from_str(answer).map_err(|_| "'${answer}' is not a number.")
+
+## Shows the shortened chapter names, if the cleanup changes any, and lets
+## them be declined.
+ask_chapter_names! : List(Str) => Try(List(Str), _)
+ask_chapter_names! = |names| {
+	cleaned = Chapters.clean(names)
+	if cleaned == names {
+		return Ok(names)
+	}
+	Stdout.line!("Chapter names without what they all repeat:")?
+	Stdout.line!(Str.join_with(cleaned.map_with_index(|name, index| "  ${(index + 1).to_str()}) ${name}"), "\n"))?
+	use_cleaned = Prompt.ask_parsed!("Use these instead of e.g. '${names.first() ?? ""}'? (y/n)", "y", Prompt.parse_yes_no)?
+	Ok(if (use_cleaned) cleaned else names)
+}
 
 ## The same split as encode_audio_on_nas uses for audiobooks and audio dramas.
 presets : List({ label : Str, detail : Str, value : Str })
@@ -133,6 +148,7 @@ run! : List(OsStr) => Try({}, _)
 run! = |args| {
 	parsed = parse_args(args)?
 	prepared = FlacToMka.prepare!(parsed.folder, parsed.cover)?
+	chapter_names = ask_chapter_names!(FlacToMka.chapter_names(prepared))?
 	language = ask_language!()?
 	naming = ask_naming!(prepared)?
 	entry = ask_entry!(naming.folder)?
@@ -144,7 +160,7 @@ run! = |args| {
 	source.join(".ignore").write_bytes!([])?
 	mka = source.join("${naming.file_stem}.mka")
 	# A half-made entry would block the next attempt.
-	match FlacToMka.write!(prepared, { output: mka, title: naming.title, language }) {
+	match FlacToMka.write!(prepared, { output: mka, title: naming.title, language, chapter_names }) {
 		Ok({}) => {}
 		Err(err) => {
 			entry.delete_all!()?
