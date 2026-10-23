@@ -1,5 +1,6 @@
 ## Pack a folder of per-chapter FLAC files and a cover image into a chaptered
-## source .mka. Asks for language, title and output file name interactively.
+## source .mka. Asks for language, series naming, title and output file name
+## interactively.
 ##
 ## Usage: flac_to_mka.sh <flac_folder> <cover_image>
 app [main!] {
@@ -18,6 +19,8 @@ import shared.Mkvmerge
 import shared.Prompt
 import shared.WorkDir
 import Flac
+import Naming
+import Series
 
 parse_args : List(OsStr) -> Try({ folder : Path, cover : Path }, [Usage])
 parse_args = |args|
@@ -63,12 +66,82 @@ ask_language! = || {
 	)
 }
 
+parse_number : Str -> Try(U64, Str)
+parse_number = |answer| U64.from_str(answer).map_err(|_| "'${answer}' is not a number.")
+
+parse_yes_no : Str -> Try(Bool, Str)
+parse_yes_no = |answer|
+	if Str.caseless_ascii_equals(answer, "y") {
+		Ok(True)
+	} else if Str.caseless_ascii_equals(answer, "n") {
+		Ok(False)
+	} else {
+		Err("Answer y or n.")
+	}
+
+non_empty : Str -> Try(Str, Str)
+non_empty = |answer| if (Str.is_empty(answer)) Err("This can't be empty.") else Ok(answer)
+
+## Settings of a series not set up yet are asked once and offered for saving.
+ask_series_settings! : List({ name : Str, file_name : Str, padding : U64 }), Str => Try({ name : Str, file_name : Str, padding : U64 }, _)
+ask_series_settings! = |known, series|
+	match Series.find(known, series) {
+		Ok(settings) => Ok(settings)
+		Err(NotFound) => {
+			file_name = match Naming.check_file_name(series) {
+				Ok(_) => series
+				Err(_) => Prompt.ask_parsed!("'${series}' can't be used in file names. File-safe series name", "", Naming.check_file_name)?
+			}
+			padding = Prompt.ask_parsed!("Pad the number in file names to how many digits", Series.default_padding.to_str(), parse_number)?
+			settings = { name: series, file_name, padding }
+			remember = Prompt.ask_parsed!("Remember this for '${series}' in ${Series.config_file!()?.display()}? (y/n)", "y", parse_yes_no)?
+			if remember {
+				Series.save!(settings)?
+			}
+			Ok(settings)
+		}
+	}
+
+## Tags only seed the defaults, since they vary between releases.
+ask_naming! : List({ album : Try(Str, _), album_artist : Try(Str, _), .. }), Path => Try({ title : Str, file_stem : Str }, _)
+ask_naming! = |infos, folder| {
+	known = Series.load!()?
+	tagged_series = match infos.first() {
+		Ok({ album_artist: Ok(artist), .. }) => Series.find(known, artist).map_ok(|settings| settings.name) ?? artist
+		_ => ""
+	}
+	series = Prompt.ask!("Series (empty for a standalone book)", tagged_series)?
+	if Str.is_empty(series) {
+		title = Prompt.ask_parsed!("Title", default_title(infos, folder), non_empty)?
+		return Ok({ title, file_stem: title })
+	}
+	settings = ask_series_settings!(known, series)?
+	guess = match infos.first() {
+		Ok({ album: Ok(album), .. }) => Naming.parse_album(album)
+		_ => Err(NoMatch)
+	}
+	number = Prompt.ask_parsed!("Number", guess.map_ok(|parsed| parsed.number.to_str()) ?? "", parse_number)?
+	episode = Naming.elide_series(Prompt.ask_parsed!("Episode title", guess.map_ok(|parsed| parsed.episode) ?? "", non_empty)?, settings.name)
+	Ok({
+		title: Naming.title({ series: settings.name, number, episode }),
+		file_stem: Naming.file_stem({ file_series: settings.file_name, padding: settings.padding, number, episode }),
+	})
+}
+
+## An invalid default would only be rejected again, so none is offered.
+default_output : Str -> Str
+default_output = |file_stem| {
+	file = "${file_stem}.mka"
+	if (Naming.check_file_name(file).is_ok()) file else ""
+}
+
 ask_output! : Str => Try(Path, _)
 ask_output! = |default|
 	Prompt.ask_valid!(
 		"Output file",
 		default,
 		|answer| {
+			_ = Naming.check_file_name(Str.split_last(answer, "/").map_ok(|parts| parts.after) ?? answer)?
 			output = Path.unix(answer)
 			match output.exists!() {
 				Ok(False) => Ok(output)
@@ -90,8 +163,9 @@ run! = |args| {
 	warn_missing_titles!(infos)?
 
 	language = ask_language!()?
-	title = Prompt.ask!("Title", default_title(infos, folder))?
-	output = ask_output!("${Str.replace_each(title, "/", "-")}.mka")?
+	naming = ask_naming!(infos, folder)?
+	title = naming.title
+	output = ask_output!(default_output(naming.file_stem))?
 
 	WorkDir.in_cwd!(
 		|work_dir| {
@@ -115,6 +189,7 @@ describe_error = |err|
 		MixedSampleRates(rates) => "The FLAC files have different sample rates (${Str.inspect(rates)}); they can't be concatenated."
 		PathErr(NotFound, path) => "'${path.display()}' does not exist."
 		NonUtf8Path(path) => "Path '${path.display()}' is not valid UTF-8."
+		BadSeriesConfig(path, line, message) => "${path.display()}, line ${line.to_str()}: ${message}"
 		other => Str.inspect(other)
 	}
 

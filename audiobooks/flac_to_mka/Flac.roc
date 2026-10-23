@@ -55,10 +55,10 @@ Flac :: {}.{
 		Duration.nanos((samples // sample_rate) * 1_000_000_000 + (samples % sample_rate) * 1_000_000_000 // sample_rate)
 
 	## Sample counts give exact durations, unlike ffmpeg's rounded ones.
-	info! : Str => Try({ path : Str, duration : Duration, sample_rate : U64, title : Try(Str, [NotFound]), album : Try(Str, [NotFound]) }, _)
+	info! : Str => Try({ path : Str, duration : Duration, sample_rate : U64, title : Try(Str, [NotFound]), album : Try(Str, [NotFound]), album_artist : Try(Str, [NotFound]) }, _)
 	info! = |path| {
 		output = Cmd.new("metaflac")
-			.args(["--show-total-samples", "--show-sample-rate", "--show-tag=TITLE", "--show-tag=ALBUM"])
+			.args(["--show-total-samples", "--show-sample-rate", "--show-tag=TITLE", "--show-tag=ALBUM", "--show-tag=ALBUMARTIST"])
 			.arg(OsStr.from_str(path))
 			.capture!()?
 		match output.trim_end().split_on("\n") {
@@ -71,6 +71,7 @@ Flac :: {}.{
 					sample_rate,
 					title: tag_value(tags, "TITLE"),
 					album: tag_value(tags, "ALBUM"),
+					album_artist: tag_value(tags, "ALBUMARTIST"),
 				})
 			}
 			_ => Err(UnexpectedMetaflacOutput(path, output))

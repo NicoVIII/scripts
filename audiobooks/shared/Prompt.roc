@@ -26,4 +26,8 @@ Prompt :: {}.{
 			}
 		}
 	}
+
+	## `ask_valid!` for a pure `parse`.
+	ask_parsed! : Str, Str, (Str -> Try(a, Str)) => Try(a, _)
+	ask_parsed! = |question, default, parse| ask_valid!(question, default, |answer| parse(answer))
 }
