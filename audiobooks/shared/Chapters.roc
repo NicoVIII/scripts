@@ -70,14 +70,38 @@ Chapters :: {}.{
 			names
 		}
 
-	## Drops `prefix` and `suffix` bytes, or fails if that leaves a name
-	## without letters.
+	separators : List(Str)
+	separators = [":", "-", "–", "—", ",", ";", "|", "/"]
+
+	## Cuts fall on spaces, so a separator without a space before it, like the
+	## ":" in "Kapitel 01: <title>", stays on the kept side.
+	trim_separators_start : Str -> Str
+	trim_separators_start = |name|
+		match separators.find_first(|separator| Str.starts_with(name, separator)) {
+			Ok(separator) => trim_separators_start(Str.trim_start(Str.drop_prefix(name, separator)))
+			Err(NotFound) => name
+		}
+
+	trim_separators_end : Str -> Str
+	trim_separators_end = |name|
+		match separators.find_first(|separator| Str.ends_with(name, separator)) {
+			Ok(separator) => trim_separators_end(Str.trim_end(Str.drop_suffix(name, separator)))
+			Err(NotFound) => name
+		}
+
+	## Drops `prefix` and `suffix` bytes, and separators left at those cuts, or
+	## fails if that leaves a name without letters.
 	strip : List(List(U8)), U64, U64 -> Try(List(Str), [Meaningless])
 	strip = |names, prefix, suffix| {
 		if names.any(|name| prefix + suffix >= name.len()) {
 			return Err(Meaningless)
 		}
-		stripped = unwrap_brackets(names.map(|name| Str.trim(Str.from_utf8_lossy(name.sublist({ start: prefix, len: name.len() - prefix - suffix })))))
+		cut = |name| {
+			kept = Str.trim(Str.from_utf8_lossy(name.sublist({ start: prefix, len: name.len() - prefix - suffix })))
+			start_trimmed = if prefix > 0 trim_separators_start(kept) else kept
+			if suffix > 0 trim_separators_end(start_trimmed) else start_trimmed
+		}
+		stripped = unwrap_brackets(names.map(cut))
 		if stripped.all(has_letter) Ok(stripped) else Err(Meaningless)
 	}
 
@@ -133,6 +157,7 @@ expect Chapters.pad_left(1234, 3) == "1234"
 
 expect Chapters.clean(["215 - und die verlorene Zeit  (Titelsong)", "215 - und die verlorene Zeit  (Teil 01)"]) == ["Titelsong", "Teil 01"]
 expect Chapters.clean(["Kapitel 1.1 - Throne of Glass 1: Die Erwählte", "Kapitel 1.2 & Kapitel 2.1 - Throne of Glass 1: Die Erwählte"]) == ["Kapitel 1.1", "Kapitel 1.2 & Kapitel 2.1"]
+expect Chapters.clean(["Titelmusik: Das Geheimnis der sieben Palmen (Folge 239)", "Kapitel 01: Das Geheimnis der sieben Palmen (Folge 239)", "Outro: Das Geheimnis der sieben Palmen (Folge 239)"]) == ["Titelmusik", "Kapitel 01", "Outro"]
 expect Chapters.clean(["Kapitel 1", "Kapitel 2"]) == ["Kapitel 1", "Kapitel 2"]
 expect Chapters.clean(["Spuk auf Bloodywood Castle 1", "Spuk auf Bloodywood Castle 2"]) == ["Spuk auf Bloodywood Castle 1", "Spuk auf Bloodywood Castle 2"]
 expect Chapters.clean(["Intro", "Prolog: Schatten der Angst"]) == ["Intro", "Prolog: Schatten der Angst"]

@@ -33,7 +33,7 @@ It asks for language, naming, working copy bitrate and the library folder (which
 
 - The title is `Die drei ??? 214 - ... und der Geisterbunker`. An episode title starting with the series name gets it replaced by `...`. Series, number and episode are suggested from the `ALBUMARTIST` and `ALBUM` tags.
 - File and folder names use a file-safe series name and the number zero-padded. If a series name, episode title or book title contains characters Windows/SMB reject (`\ / : * ? " < > |`) or ends in a dot or space, you're asked for a file-safe variant.
-- If all chapter names repeat something, like the episode title in `215 - und die verlorene Zeit  (Teil 01)`, it shows them without it (`Teil 01`) and asks whether to use those. Only whole words are dropped, at least two, and never so much that just a number is left.
+- If all chapter names repeat something, like the episode title in `215 - und die verlorene Zeit  (Teil 01)`, it shows them without it (`Teil 01`) and asks whether to use those. Only whole words are dropped, at least two, plus a separator they leave behind (the `:` in `Kapitel 01: <title>`), and never so much that just a number is left.
 - The bitrate is picked from a menu: audiobook (48k) or audio drama (64k), or enter any bitrate like `56k`.
 - Leave the series empty for a standalone book: you're asked for the title instead, and the entry is `<library>/<title>/`.
 
