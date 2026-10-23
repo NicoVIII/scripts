@@ -16,7 +16,7 @@ It merges the flacs, takes chapter names from their `TITLE` tags (falling back t
 
 Requires `roc` on the PATH (see the [README](../README.md#roc-scripts)), ffmpeg, metaflac and mkvmerge. Intermediate files go into a hidden folder in the current directory, so it needs free space for one more copy of the book.
 
-## m4b input
+### m4b input
 
 If you already have a single chaptered m4b file you can simply use ffmpeg to convert it into an mka file and work from there:
 
