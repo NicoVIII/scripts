@@ -7,6 +7,13 @@ import pf.Stderr
 ## reasons, so ffmpeg runs in Docker.
 Aac :: {}.{
 
+	## 5.1 is the newest jrottenberg/ffmpeg whose fdk-aac still has HE-AAC; from
+	## 6.0 on it's built without SBR, so only AAC-LC encodes. Older images (the
+	## :ubuntu tag is ffmpeg 3.1) can't write covers into m4a. Pinned by digest
+	## because a re-pushed tag would silently change the library's encoding.
+	image : Str
+	image = "jrottenberg/ffmpeg:5.1-ubuntu@sha256:478e5de92d31a88fcd643dc2d3dbb0c48f08d87c0df9cc455e1a1f9c2498704c"
+
 	## Accepts e.g. 48k or 64K, the form ffmpeg's -b:a takes.
 	check_bitrate : Str -> Try(Str, Str)
 	check_bitrate = |bitrate| {
@@ -41,7 +48,7 @@ Aac :: {}.{
 				"run", "--rm", "--user", spec.user,
 				"-v", "${spec.input.dir}:/input:ro",
 				"-v", "${spec.output.dir}:/output",
-				"jrottenberg/ffmpeg:ubuntu",
+				image,
 				"-hide_banner", "-v", "warning", "-stats", "-n",
 				"-i", "/input/${spec.input.name}",
 				"-map", "0:a:0", "-sn", "-dn",
@@ -53,6 +60,24 @@ Aac :: {}.{
 
 	ffmpeg! : List(Str) => Try({}, _)
 	ffmpeg! = |args| Cmd.new("docker").args(args.map(OsStr.from_str)).inherit_stdio().call!()
+
+	remove_if_exists! : Path => Try({}, _)
+	remove_if_exists! = |path|
+		match path.delete!() {
+			Ok({}) | Err(PathErr(NotFound, _)) => Ok({})
+			Err(err) => Err(err)
+		}
+
+	## ffmpeg leaves a broken partial file behind when it fails.
+	ffmpeg_to! : List(Str), Path => Try({}, _)
+	ffmpeg_to! = |args, output|
+		match ffmpeg!(args) {
+			Ok({}) => Ok({})
+			Err(err) => {
+				remove_if_exists!(output)?
+				Err(err)
+			}
+		}
 
 	path_str! : Path => Try(Str, _)
 	path_str! = |path| path.absolute!()?.to_str().map_err(|_| NonUtf8Path(path))
@@ -74,15 +99,11 @@ Aac :: {}.{
 			bitrate: spec.bitrate,
 			cover: spec.cover,
 		}
-		match ffmpeg!(docker_args(base)) {
+		match ffmpeg_to!(docker_args(base), spec.output) {
 			Ok({}) => {}
 			Err(BadExitStatus(_)) if spec.cover => {
 				Stderr.line!("Could not keep the cover, retrying audio only.")?
-				match spec.output.delete!() {
-					Ok({}) | Err(PathErr(NotFound, _)) => {}
-					Err(err) => return Err(err)
-				}
-				ffmpeg!(docker_args({ ..base, cover: False }))?
+				ffmpeg_to!(docker_args({ ..base, cover: False }), spec.output)?
 			}
 			Err(err) => return Err(err)
 		}
