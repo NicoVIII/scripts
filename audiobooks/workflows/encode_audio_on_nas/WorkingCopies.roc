@@ -17,15 +17,17 @@ WorkingCopies :: {}.{
 			Err(_) => name
 		}
 
-	## Walks `dir`, whose parent is `entry`. Symlinks aren't followed.
-	scan_dir! : Path, Path, List({ mka : Path, entry : Path }) => Try(List({ mka : Path, entry : Path }), _)
-	scan_dir! = |dir, entry, found| {
+	## Walks `dir`, whose parent is `entry`, except the folders in `ignored`.
+	## Symlinks aren't followed.
+	scan_dir! : Path, Path, List(Str), List({ mka : Path, entry : Path }) => Try(List({ mka : Path, entry : Path }), _)
+	scan_dir! = |dir, entry, ignored, found| {
 		in_source = file_name(dir) == "source"
 		var $found = found
 		for path in dir.list!()? {
 			match path.type!()? {
+				IsDir if ignored.contains(path.display()) => {}
 				IsDir => {
-					$found = scan_dir!(path, dir, $found)?
+					$found = scan_dir!(path, dir, ignored, $found)?
 				}
 				IsFile if in_source and Extension.matches(path, "mka") => {
 					$found = $found.append({ mka: path, entry })
@@ -36,9 +38,9 @@ WorkingCopies :: {}.{
 		Ok($found)
 	}
 
-	## The source mkas below `root`.
-	scan! : Path => Try(List({ mka : Path, entry : Path }), _)
-	scan! = |root| scan_dir!(root, root, [])
+	## The source mkas below `root`, except in the folders in `ignored`.
+	scan! : Path, List(Path) => Try(List({ mka : Path, entry : Path }), _)
+	scan! = |root, ignored| scan_dir!(root, root, ignored.map(|path| path.display()), [])
 
 	m4a_name : { mka : Path, entry : Path } -> Str
 	m4a_name = |source| "${stem(file_name(source.mka))}.m4a"

@@ -20,11 +20,12 @@ import Nas
 import Smb
 import WorkingCopies
 
-## An empty subfolder scans the whole share.
-shares : List({ name : Str, subfolders : List(Str), bitrate : Str })
+## An empty subfolder scans the whole share. `ignore` lists folders, relative
+## to the share, that aren't scanned.
+shares : List({ name : Str, subfolders : List(Str), ignore : List(Str), bitrate : Str })
 shares = [
-	{ name: "books", subfolders: [""], bitrate: "48k" },
-	{ name: "audiobooks", subfolders: ["Hörspiele"], bitrate: "64k" },
+	{ name: "books", subfolders: [""], ignore: ["#recycle"], bitrate: "48k" },
+	{ name: "audiobooks", subfolders: ["Hörspiele"], ignore: [], bitrate: "64k" },
 ]
 
 relative : Path, Path -> Str
@@ -83,9 +84,9 @@ process_source! = |source, shown, options|
 
 ## Counts sources whose working copy is current afterward. Failures are
 ## reported and skipped; only an interrupt stops the run.
-encode_subfolder! : Path, { bitrate : Str, dry_run : Bool } => Try({ done : U64, total : U64 }, _)
-encode_subfolder! = |root, options| {
-	sources = WorkingCopies.scan!(root)?
+encode_subfolder! : Path, List(Path), { bitrate : Str, dry_run : Bool } => Try({ done : U64, total : U64 }, _)
+encode_subfolder! = |root, ignored, options| {
+	sources = WorkingCopies.scan!(root, ignored)?
 	Stdout.line!("Found ${sources.len().to_str()} .mka file(s)")?
 	var $done = 0
 	for source in sources {
@@ -102,14 +103,15 @@ encode_subfolder! = |root, options| {
 	Ok({ done: $done, total: sources.len() })
 }
 
-encode_share! : Path, { name : Str, subfolders : List(Str), bitrate : Str }, Bool => Try({ done : U64, total : U64 }, _)
+encode_share! : Path, { name : Str, subfolders : List(Str), ignore : List(Str), bitrate : Str }, Bool => Try({ done : U64, total : U64 }, _)
 encode_share! = |mount_point, share, dry_run| {
+	ignored = share.ignore.map(|folder| mount_point.join(Str.drop_suffix(folder, "/")))
 	var $counts = { done: 0, total: 0 }
 	for subfolder in share.subfolders {
 		Stdout.line!("Subfolder ${if (Str.is_empty(subfolder)) "/" else subfolder} | bitrate ${share.bitrate}")?
 		root = if (Str.is_empty(subfolder)) mount_point else mount_point.join(subfolder)
 		if root.is_dir!()? {
-			counts = encode_subfolder!(root, { bitrate: share.bitrate, dry_run })?
+			counts = encode_subfolder!(root, ignored, { bitrate: share.bitrate, dry_run })?
 			$counts = { done: $counts.done + counts.done, total: $counts.total + counts.total }
 		} else {
 			Stderr.line!("Subfolder does not exist: ${root.display()}")?

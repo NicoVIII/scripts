@@ -69,7 +69,7 @@ username = "jane"
 domain = "WORKGROUP"
 ```
 
-The shares, their subfolders and bitrates are set at the top of `workflows/encode_audio_on_nas/main.roc`.
+The shares, their subfolders, the folders to skip (like `#recycle`, relative to the share) and bitrates are set at the top of `workflows/encode_audio_on_nas/main.roc`.
 
 ## Tools
 
