@@ -9,12 +9,12 @@ I personally recommend to have two copies of your audiobooks. The original one f
 If you have a folder with one flac file per chapter (named so that `sort -V` puts them in order), run:
 
 ```sh
-roc flac_to_mka.roc -- <input_folder> <cover_image>
+./flac_to_mka.sh <input_folder> <cover_image>
 ```
 
 It merges the flacs, takes chapter names from their `TITLE` tags (falling back to the file name), asks for language, title and output file name, and writes the mka with the cover (jpg or png) attached.
 
-Requires the new Roc compiler (nightly-2026-10-12 or later, from [roc-lang/nightlies](https://github.com/roc-lang/nightlies/releases)), ffmpeg, metaflac and mkvmerge. Intermediate files go into a hidden folder in the current directory, so it needs free space for one more copy of the book.
+Requires `roc` on the PATH (see the [README](../README.md#roc-scripts)), ffmpeg, metaflac and mkvmerge. Intermediate files go into a hidden folder in the current directory, so it needs free space for one more copy of the book.
 
 ## m4b input
 
