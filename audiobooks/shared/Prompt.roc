@@ -46,6 +46,37 @@ Prompt :: {}.{
 			Err("Answer y or n.")
 		}
 
+	## One line per option, numbered from 1, with the details lined up.
+	menu : List({ label : Str, detail : Str, value : a }) -> Str
+	menu = |options| {
+		width = options.map(|option| Str.count_utf8_bytes(option.label)).max() ?? 0
+		lines = options.map_with_index(
+			|option, index| {
+				padding = Str.repeat(" ", width - Str.count_utf8_bytes(option.label))
+				"  ${(index + 1).to_str()}) ${option.label}${padding}   ${option.detail}"
+			},
+		)
+		Str.join_with(lines, "\n")
+	}
+
+	## A number picks that option; anything else goes to `parse_other`.
+	pick : List({ label : Str, detail : Str, value : a }), Str, (Str -> Try(a, Str)) -> Try(a, Str)
+	pick = |options, answer, parse_other|
+		match U64.from_str(answer) {
+			Ok(number) if number >= 1 =>
+				options.get(number - 1).map_ok(|option| option.value).map_err(|_| "Choose a number from 1 to ${options.len().to_str()}.")
+			_ => parse_other(answer)
+		}
+
+	## Shows `options` as a numbered menu and asks until the answer is one of
+	## their numbers or something `parse_other` accepts; `other` describes
+	## that, e.g. "enter a bitrate like 56k".
+	choose! : Str, List({ label : Str, detail : Str, value : a }), Str, (Str -> Try(a, Str)) => Try(a, _)
+	choose! = |question, options, other, parse_other| {
+		Stdout.line!("${question}:\n${menu(options)}")?
+		ask_parsed!("Choose 1-${options.len().to_str()}, or ${other}", "", |answer| pick(options, answer, parse_other))
+	}
+
 	## stty acts on its stdin, which must be the terminal.
 	stty! : Str => Try({}, _)
 	stty! = |setting| Cmd.new("stty").arg(OsStr.from_str(setting)).stdin(Inherit).call!()
@@ -63,3 +94,9 @@ Prompt :: {}.{
 		answer
 	}
 }
+
+expect Prompt.menu([{ label: "audiobook", detail: "48k", value: 1 }, { label: "audio drama", detail: "64k", value: 2 }]) == "  1) audiobook     48k\n  2) audio drama   64k"
+expect Prompt.pick([{ label: "a", detail: "", value: "x" }], "1", |_| Err("no")) == Ok("x")
+expect Prompt.pick([{ label: "a", detail: "", value: "x" }], "2", |_| Err("no")) == Err("Choose a number from 1 to 1.")
+expect Prompt.pick([{ label: "a", detail: "", value: "x" }], "0", |_| Err("no")) == Err("no")
+expect Prompt.pick([{ label: "a", detail: "", value: "x" }], "56k", |answer| Ok(answer)) == Ok("56k")

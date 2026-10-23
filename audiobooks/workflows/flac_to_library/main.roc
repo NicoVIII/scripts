@@ -41,22 +41,15 @@ ask_language! = || {
 parse_number : Str -> Try(U64, Str)
 parse_number = |answer| U64.from_str(answer).map_err(|_| "'${answer}' is not a number.")
 
-## The same split as encode_audio_on_nas uses for books and radio plays.
-presets : List({ name : Str, bitrate : Str })
-presets = [{ name: "book", bitrate: "48k" }, { name: "play", bitrate: "64k" }]
-
-parse_preset : Str -> Try(Str, Str)
-parse_preset = |answer|
-	match presets.find_first(|preset| preset.name == answer) {
-		Ok(preset) => Ok(preset.bitrate)
-		Err(NotFound) => Aac.check_bitrate(answer).map_err(|_| "Answer a preset name or a bitrate like 56k.")
-	}
+## The same split as encode_audio_on_nas uses for audiobooks and audio dramas.
+presets : List({ label : Str, detail : Str, value : Str })
+presets = [
+	{ label: "audiobook", detail: "48k", value: "48k" },
+	{ label: "audio drama", detail: "64k", value: "64k" },
+]
 
 ask_bitrate! : () => Try(Str, _)
-ask_bitrate! = || {
-	choices = Str.join_with(presets.map(|preset| "${preset.name} (${preset.bitrate})"), ", ")
-	Prompt.ask_parsed!("Working copy bitrate: ${choices} or e.g. 56k", "", parse_preset)
-}
+ask_bitrate! = || Prompt.choose!("Working copy bitrate", presets, "enter a bitrate like 56k", Aac.check_bitrate)
 
 ## Only asks when `value` can't be used as is.
 ask_file_safe! : Str, Str => Try(Str, _)

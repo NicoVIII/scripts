@@ -33,7 +33,7 @@ It asks for language, naming, working copy bitrate and the library folder (which
 
 - The title is `Die drei ??? 214 - ... und der Geisterbunker`. An episode title starting with the series name gets it replaced by `...`. Series, number and episode are suggested from the `ALBUMARTIST` and `ALBUM` tags.
 - File and folder names use a file-safe series name and the number zero-padded. If a series name, episode title or book title contains characters Windows/SMB reject (`\ / : * ? " < > |`) or ends in a dot or space, you're asked for a file-safe variant.
-- Bitrate presets: `book` (48k) and `play` (64k), or any bitrate like `56k`.
+- The bitrate is picked from a menu: audiobook (48k) or audio drama (64k), or enter any bitrate like `56k`.
 - Leave the series empty for a standalone book: you're asked for the title instead, and the entry is `<library>/<title>/`.
 
 If the merge fails, the entry is removed again. If only the encode fails, the source is kept and the error shows the `mka_to_aac` command to retry.
@@ -98,4 +98,4 @@ The m4a's encoding-tool tag records the encoding version and bitrate, e.g. `audi
 
 ### mka_to_opus
 
-`tools/mka_to_opus.sh <input_file> <bitrate>` encodes opus, which gives great quality at small sizes if your devices support it. I use 32k for audiobooks and 64k for radio plays. Add the cover again with the MKVToolNix header editor if you want it.
+`tools/mka_to_opus.sh <input_file> <bitrate>` encodes opus, which gives great quality at small sizes if your devices support it. I use 32k for audiobooks and 64k for audio dramas. Add the cover again with the MKVToolNix header editor if you want it.
