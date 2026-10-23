@@ -1,0 +1,19 @@
+{
+	"name": "scripts",
+	// Tool versions are pinned here and nowhere else; CI runs inside this container.
+	"image": "mcr.microsoft.com/devcontainers/base:2.2.3-trixie",
+	"features": {
+		// Own (NicoVIII/devcontainer-features)
+		"ghcr.io/nicoviii/devcontainer-features/roc:0": {
+			"version": "2026-10-21-5349569"
+		},
+		"ghcr.io/nicoviii/devcontainer-features/just:0": {
+			"version": "1.58.0"
+		},
+		// devcontainers-extra: no official or maintainer feature exists
+		"ghcr.io/devcontainers-extra/features/shellcheck:1": {
+			"version": "0.11.0"
+		}
+	},
+	"postCreateCommand": "git config --global --add safe.directory ${containerWorkspaceFolder}"
+}

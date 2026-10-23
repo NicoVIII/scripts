@@ -35,10 +35,4 @@ printf 'Updated %s\n' "${files[@]#"$repo_root"/}"
 echo "Required: $(echo "$release" | jq -r '.body' | grep -m1 -iE 'requires .*nightly' || echo 'not stated in the release notes')"
 echo "Installed: $(roc version)"
 
-mapfile -t apps < <(grep -rlE --include='main.roc' '^app \[' "$repo_root")
-failed=0
-for app in "${apps[@]}"; do
-  echo "== ${app#"$repo_root"/}"
-  roc check "$app" && roc test "$app" || failed=1
-done
-exit "$failed"
+just --justfile "$repo_root/justfile" roc

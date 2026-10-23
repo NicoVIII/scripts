@@ -1,0 +1,19 @@
+{
+  "features": {
+    "ghcr.io/devcontainers-extra/features/shellcheck:1": {
+      "version": "1.1.0",
+      "resolved": "ghcr.io/devcontainers-extra/features/shellcheck@sha256:8e6d050e4ead6a0350dbe4c70611e351f32cb61a8cc5cb2b39da0cf29ff3bed5",
+      "integrity": "sha256:8e6d050e4ead6a0350dbe4c70611e351f32cb61a8cc5cb2b39da0cf29ff3bed5"
+    },
+    "ghcr.io/nicoviii/devcontainer-features/just:0": {
+      "version": "0.1.0",
+      "resolved": "ghcr.io/nicoviii/devcontainer-features/just@sha256:64ecc19b8a284a50fca91816bc7e93607c85064690ac365b00f54f3ebc5677a8",
+      "integrity": "sha256:64ecc19b8a284a50fca91816bc7e93607c85064690ac365b00f54f3ebc5677a8"
+    },
+    "ghcr.io/nicoviii/devcontainer-features/roc:0": {
+      "version": "0.1.0",
+      "resolved": "ghcr.io/nicoviii/devcontainer-features/roc@sha256:0431861bda995a4a0b61bd8d355071b2f2dc30177b2a274f0c0f8092b0f432c9",
+      "integrity": "sha256:0431861bda995a4a0b61bd8d355071b2f2dc30177b2a274f0c0f8092b0f432c9"
+    }
+  }
+}

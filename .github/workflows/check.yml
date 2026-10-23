@@ -1,0 +1,15 @@
+name: Check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: devcontainers/ci@v0.3
+        with:
+          runCmd: just check
+          push: never
