@@ -62,16 +62,12 @@ describe_error = |err|
 ## and skipped; only an interrupt stops the run.
 encode_subfolder! : Path, Str => Try({ done : U64, total : U64 }, _)
 encode_subfolder! = |root, bitrate| {
-	found = WorkingCopies.scan!(root)?
-	Stdout.line!("Found ${found.sources.len().to_str()} .mka file(s)")?
-	# A working copy counts as present anywhere below the subfolder, not only
-	# next to its source.
-	var $m4a_names = found.m4a_names
+	sources = WorkingCopies.scan!(root)?
+	Stdout.line!("Found ${sources.len().to_str()} .mka file(s)")?
 	var $done = 0
-	for source in found.sources {
-		name = WorkingCopies.m4a_name(source)
+	for source in sources {
 		shown = relative(source.mka, root)
-		if $m4a_names.contains(name) {
+		if WorkingCopies.has_working_copy!(source)? {
 			Stdout.line!("SKIP ${shown}")?
 			$done = $done + 1
 		} else {
@@ -79,7 +75,6 @@ encode_subfolder! = |root, bitrate| {
 			match WorkingCopies.encode!(source, bitrate) {
 				Ok({}) => {
 					Stdout.line!("OK   ${shown}")?
-					$m4a_names = $m4a_names.append(name)
 					$done = $done + 1
 				}
 				Err(Interrupted) => return Err(Interrupted)
@@ -87,7 +82,7 @@ encode_subfolder! = |root, bitrate| {
 			}
 		}
 	}
-	Ok({ done: $done, total: found.sources.len() })
+	Ok({ done: $done, total: sources.len() })
 }
 
 encode_share! : Path, { name : Str, subfolders : List(Str), bitrate : Str } => Try({ done : U64, total : U64 }, _)

@@ -51,7 +51,7 @@ bitrate = "64k"
 
 `workflows/encode_audio_on_nas.sh` creates the missing m4a working copies on the NAS from the source mka files in `source/` folders, using [`mka_to_aac`](#mka_to_aac). It asks for the Samba login and for sudo once, which it needs to mount each share with `mount.cifs` (cifs-utils).
 
-- A source is skipped if an m4a of the same name exists anywhere in the scanned folder. A new m4a goes next to the `source/` folder and replaces an `.opus` or `.mka` working copy of the same name.
+- A source is skipped if an m4a of the same name is next to its `source/` folder; that's also where a new m4a goes. It replaces an `.opus` or `.mka` working copy of the same name.
 - Each source is copied to a hidden folder in the current directory for encoding, so it needs free space for one book and its m4a.
 - A failed file is reported and the run goes on; a share that can't be mounted is skipped.
 
