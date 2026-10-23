@@ -6,7 +6,7 @@ This is a collection of useful scripts I use for various purposes. They are orga
 
 The Roc scripts need the new Roc compiler (the nightly pinned in `.devcontainer/devcontainer.json`, from [roc-lang/nightlies](https://github.com/roc-lang/nightlies/releases)) as `roc` on the PATH. They target [basic-cli](https://github.com/roc-lang/basic-cli) 0.26.0.
 
-Each script is a folder with a `main.roc` entry point and a `<script>.sh` wrapper next to it, which is what you run. Modules used by several scripts of a category live in that category's `shared/` package (e.g. `audiobooks/shared/`), which apps import with `shared: "../shared/main.roc"`.
+Each script is a folder with a `main.roc` entry point and a `<script>.sh` wrapper next to it, which is what you run. Modules used by several scripts of a category live in that category's `shared/` package (e.g. `audiobooks/shared/`), which apps import by relative path (`shared: "../../shared/main.roc"` from `audiobooks/tools/<script>/`).
 
 The basic-cli URL is repeated in every app header and every `shared/main.roc`. `./roc-upgrade-basic-cli.sh <version>` replaces all of them, shows which compiler nightly the release needs, and checks and tests every app with `just roc`; fixing what the new version breaks stays manual.
 

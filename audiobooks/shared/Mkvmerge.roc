@@ -16,6 +16,15 @@ Mkvmerge :: {}.{
 		Ok(codes)
 	}
 
+	## `known` comes from `known_languages!`; an empty code means none.
+	check_language : List(Str), Str -> Try(Str, Str)
+	check_language = |known, code|
+		if Str.is_empty(code) or known.contains(code) {
+			Ok(code)
+		} else {
+			Err("Unknown language code '${code}', see `mkvmerge --list-languages`.")
+		}
+
 	optional_args : Str, List(Str) -> List(OsStr)
 	optional_args = |value, args| if (Str.is_empty(value)) [] else args.map(OsStr.from_str)
 

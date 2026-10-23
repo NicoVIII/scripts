@@ -2,23 +2,19 @@
 ## source .mka. Asks for language, series naming, title and output file name
 ## interactively.
 ##
-## Usage: flac_to_mka.sh <flac_folder> <cover_image>
+## Usage: flac_to_library.sh <flac_folder> <cover_image>
 app [main!] {
 	pf: platform "https://github.com/roc-lang/basic-cli/releases/download/0.26.0/GddgvsGjiNXrHFW6au5i5dUDbTs8FinQdrgE2Gqmw53t.tar.zst",
-	shared: "../shared/main.roc",
+	shared: "../../shared/main.roc",
 }
 
 import pf.OsStr
 import pf.Path
 import pf.Stdout
 import pf.Stderr
-import shared.Chapters
-import shared.Cover
-import shared.Ffmpeg
+import shared.FlacToMka
 import shared.Mkvmerge
 import shared.Prompt
-import shared.WorkDir
-import Flac
 import Naming
 import Series
 
@@ -29,27 +25,6 @@ parse_args = |args|
 		_ => Err(Usage)
 	}
 
-warn_missing_titles! : List({ path : Str, title : Try(Str, _), .. }) => Try({}, _)
-warn_missing_titles! = |infos| {
-	for info in infos.keep_if(|info| info.title.is_err()) {
-		Stderr.line!("No TITLE tag in '${info.path}', using the file name as chapter name.")?
-	}
-	Ok({})
-}
-
-filename_stem : Str -> Str
-filename_stem = |path| {
-	name = Str.split_last(path, "/").map_ok(|parts| parts.after) ?? path
-	Str.split_last(name, ".").map_ok(|parts| parts.before) ?? name
-}
-
-default_title : List({ album : Try(Str, _), .. }), Path -> Str
-default_title = |infos, folder|
-	match infos.first() {
-		Ok({ album: Ok(album), .. }) => album
-		_ => folder.filename().map_ok(Path.display) ?? ""
-	}
-
 ## Validated before the slow merge so a typo doesn't waste it.
 ask_language! : () => Try(Str, _)
 ask_language! = || {
@@ -57,12 +32,7 @@ ask_language! = || {
 	Prompt.ask_valid!(
 		"Language (ISO 639 code, e.g. ger or de; empty to skip)",
 		"",
-		|answer|
-			if Str.is_empty(answer) or known.contains(answer) {
-				Ok(answer)
-			} else {
-				Err("Unknown language code '${answer}', see `mkvmerge --list-languages`.")
-			},
+		|answer| Mkvmerge.check_language(known, answer),
 	)
 }
 
@@ -103,8 +73,9 @@ ask_series_settings! = |known, series|
 	}
 
 ## Tags only seed the defaults, since they vary between releases.
-ask_naming! : List({ album : Try(Str, _), album_artist : Try(Str, _), .. }), Path => Try({ title : Str, file_stem : Str }, _)
-ask_naming! = |infos, folder| {
+ask_naming! : { folder : Path, infos : List({ album : Try(Str, _), album_artist : Try(Str, _), .. }), .. } => Try({ title : Str, file_stem : Str }, _)
+ask_naming! = |prepared| {
+	infos = prepared.infos
 	known = Series.load!()?
 	tagged_series = match infos.first() {
 		Ok({ album_artist: Ok(artist), .. }) => Series.find(known, artist).map_ok(|settings| settings.name) ?? artist
@@ -112,7 +83,7 @@ ask_naming! = |infos, folder| {
 	}
 	series = Prompt.ask!("Series (empty for a standalone book)", tagged_series)?
 	if Str.is_empty(series) {
-		title = Prompt.ask_parsed!("Title", default_title(infos, folder), non_empty)?
+		title = Prompt.ask_parsed!("Title", FlacToMka.default_title(prepared), non_empty)?
 		return Ok({ title, file_stem: title })
 	}
 	settings = ask_series_settings!(known, series)?
@@ -154,43 +125,21 @@ ask_output! = |default|
 run! : List(OsStr) => Try({}, _)
 run! = |args| {
 	parsed = parse_args(args)?
-	cover = Cover.from_path!(parsed.cover)?
-	# The concat demuxer resolves relative entries against the list file's
-	# directory, which is the work dir.
-	folder = parsed.folder.absolute!()?
-	infos = Flac.files!(folder)?.map_try!(Flac.info!)?
-	Flac.check_sample_rates(infos)?
-	warn_missing_titles!(infos)?
-
+	prepared = FlacToMka.prepare!(parsed.folder, parsed.cover)?
 	language = ask_language!()?
-	naming = ask_naming!(infos, folder)?
-	title = naming.title
+	naming = ask_naming!(prepared)?
 	output = ask_output!(default_output(naming.file_stem))?
-
-	WorkDir.in_cwd!(
-		|work_dir| {
-			chapters = work_dir.join("chapters.txt")
-			chapters.write_utf8!(Chapters.to_ogm(infos.map(|info| { title: info.title ?? filename_stem(info.path), duration: info.duration })))?
-			audio = work_dir.join("merged.flac")
-			Ffmpeg.concat!(infos.map(|info| info.path), work_dir, audio)?
-			Mkvmerge.mux!({ output, title, language, audio, chapters, cover })
-		},
-	)?
+	FlacToMka.write!(prepared, { output, title: naming.title, language })?
 	Stdout.line!("Created ${output.display()}")
 }
 
 describe_error : _ -> Str
 describe_error = |err|
 	match err {
-		Usage => "Usage: flac_to_mka.sh <flac_folder> <cover_image>"
-		NoFlacFiles(folder) => "No .flac files in '${folder.display()}'. Only FLAC input is supported for now."
-		CoverNotFound(cover) => "Cover '${cover.display()}' is not a file."
-		UnsupportedCover(cover) => "Cover '${cover.display()}' must be a .jpg, .jpeg or .png."
-		MixedSampleRates(rates) => "The FLAC files have different sample rates (${Str.inspect(rates)}); they can't be concatenated."
+		Usage => "Usage: flac_to_library.sh <flac_folder> <cover_image>"
 		PathErr(NotFound, path) => "'${path.display()}' does not exist."
-		NonUtf8Path(path) => "Path '${path.display()}' is not valid UTF-8."
 		BadSeriesConfig(path, line, message) => "${path.display()}, line ${line.to_str()}: ${message}"
-		other => Str.inspect(other)
+		other => FlacToMka.describe_error(other) ?? Str.inspect(other)
 	}
 
 main! : List(OsStr) => Try({}, _)
@@ -203,5 +152,3 @@ main! = |args|
 			Err(Exit(1))
 		}
 	}
-
-expect filename_stem("/a/b/10 - it's.flac") == "10 - it's"
