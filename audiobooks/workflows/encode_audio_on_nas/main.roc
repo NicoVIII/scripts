@@ -1,7 +1,8 @@
 ## Create the missing or outdated m4a working copies on the NAS from the
 ## source mkas in the library entries' "source/" folders. Asks for the Samba
-## login and sudo, which mounts the shares. Working copies from an older encoding version or
-## with another bitrate are re-encoded; `--dry-run` only lists what would be.
+## login and sudo, which mounts the shares; the NAS itself is set up once and
+## remembered. Working copies from an older encoding version or with another
+## bitrate are re-encoded; `--dry-run` only lists what would be.
 ##
 ## Usage: encode_audio_on_nas.sh [--dry-run]
 app [main!] {
@@ -15,15 +16,9 @@ import pf.Stdout
 import pf.Stderr
 import shared.Aac
 import shared.Prompt
+import Nas
 import Smb
 import WorkingCopies
-
-server : Str
-server = "192.168.2.8"
-
-## Optional SMB domain/workgroup.
-domain : Str
-domain = ""
 
 ## An empty subfolder scans the whole share.
 shares : List({ name : Str, subfolders : List(Str), bitrate : Str })
@@ -31,9 +26,6 @@ shares = [
 	{ name: "books", subfolders: [""], bitrate: "48k" },
 	{ name: "audiobooks", subfolders: ["Hörspiele"], bitrate: "64k" },
 ]
-
-non_empty : Str -> Try(Str, Str)
-non_empty = |answer| if (Str.is_empty(answer)) Err("This can't be empty.") else Ok(answer)
 
 relative : Path, Path -> Str
 relative = |path, root| Str.drop_prefix(path.display(), "${root.display()}/")
@@ -56,6 +48,7 @@ describe_error = |err|
 	match err {
 		Usage => "Usage: encode_audio_on_nas.sh [--dry-run]"
 		EmptyPassword => "The password can't be empty."
+		BadNasConfig(path, line, message) => "${path.display()}, line ${line.to_str()}: ${message}"
 		other => describe_path_error(other) ?? (Smb.describe_error(other) ?? Str.inspect(other))
 	}
 
@@ -126,8 +119,8 @@ encode_share! = |mount_point, share, dry_run| {
 }
 
 ## A share that can't be mounted is skipped.
-encode_shares! : { username : Str, password : Str, domain : Str }, Bool => Try({ done : U64, total : U64 }, _)
-encode_shares! = |credentials, dry_run| {
+encode_shares! : Str, { username : Str, password : Str, domain : Str }, Bool => Try({ done : U64, total : U64 }, _)
+encode_shares! = |server, credentials, dry_run| {
 	var $counts = { done: 0, total: 0 }
 	for share in shares {
 		unc = "//${server}/${share.name}"
@@ -142,6 +135,24 @@ encode_shares! = |credentials, dry_run| {
 	}
 	Ok($counts)
 }
+
+## The first time, the server and username are asked and offered for saving;
+## later runs only confirm the saved username.
+ask_nas! : () => Try({ server : Str, username : Str, domain : Str }, _)
+ask_nas! = ||
+	match Nas.load!()? {
+		Found(nas) => Ok({ ..nas, username: Prompt.ask_parsed!("Samba username", nas.username, Prompt.non_empty)? })
+		Missing => {
+			server = Prompt.ask_parsed!("NAS server (host name or IP)", "", Prompt.non_empty)?
+			username = Prompt.ask_parsed!("Samba username", "", Prompt.non_empty)?
+			nas = { server, username, domain: "" }
+			remember = Prompt.ask_parsed!("Remember this in ${Nas.config_file!()?.display()}? (y/n)", "y", Prompt.parse_yes_no)?
+			if remember {
+				Nas.save!(nas)?
+			}
+			Ok(nas)
+		}
+	}
 
 parse_args : List(OsStr) -> Try({ dry_run : Bool }, [Usage])
 parse_args = |args|
@@ -162,13 +173,13 @@ summary = |counts, dry_run|
 run! : List(OsStr) => Try({}, _)
 run! = |args| {
 	parsed = parse_args(args)?
-	username = Prompt.ask_parsed!("Samba username", "", non_empty)?
+	nas = ask_nas!()?
 	password = Prompt.ask_secret!("Samba password")?
 	if Str.is_empty(password) {
 		return Err(EmptyPassword)
 	}
 	Stdout.line!("Authorizing sudo once for mount/unmount...")?
-	counts = Smb.with_sudo!(|| encode_shares!({ username, password, domain }, parsed.dry_run))?
+	counts = Smb.with_sudo!(|| encode_shares!(nas.server, { username: nas.username, password, domain: nas.domain }, parsed.dry_run))?
 	Stdout.line!("\n${summary(counts, parsed.dry_run)}")
 }
 

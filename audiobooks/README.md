@@ -60,7 +60,15 @@ It creates missing and outdated m4a working copies on the NAS from the source mk
 - Each source is copied to a hidden folder in the current directory for encoding, so it needs free space for one book and its m4a.
 - A failed file is reported and the run goes on; a share that can't be mounted is skipped.
 
-Server, shares, subfolders and their bitrates are set at the top of `workflows/encode_audio_on_nas/main.roc`.
+The first run asks for the NAS server and your username and offers to remember them in `~/.config/audiobooks/nas.toml` (`$XDG_CONFIG_HOME` is honoured); later runs offer the saved username as the default. Add `domain` if your NAS needs an SMB domain or workgroup:
+
+```toml
+server = "192.168.1.10"
+username = "jane"
+domain = "WORKGROUP"
+```
+
+The shares, their subfolders and bitrates are set at the top of `workflows/encode_audio_on_nas/main.roc`.
 
 ## Tools
 

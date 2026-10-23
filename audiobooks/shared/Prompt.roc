@@ -33,6 +33,19 @@ Prompt :: {}.{
 	ask_parsed! : Str, Str, (Str -> Try(a, Str)) => Try(a, _)
 	ask_parsed! = |question, default, parse| ask_valid!(question, default, |answer| parse(answer))
 
+	non_empty : Str -> Try(Str, Str)
+	non_empty = |answer| if (Str.is_empty(answer)) Err("This can't be empty.") else Ok(answer)
+
+	parse_yes_no : Str -> Try(Bool, Str)
+	parse_yes_no = |answer|
+		if Str.caseless_ascii_equals(answer, "y") {
+			Ok(True)
+		} else if Str.caseless_ascii_equals(answer, "n") {
+			Ok(False)
+		} else {
+			Err("Answer y or n.")
+		}
+
 	## stty acts on its stdin, which must be the terminal.
 	stty! : Str => Try({}, _)
 	stty! = |setting| Cmd.new("stty").arg(OsStr.from_str(setting)).stdin(Inherit).call!()

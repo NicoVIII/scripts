@@ -1,94 +1,29 @@
-import pf.Env
 import pf.Path
 import shared.Aac
+import shared.Config
 import Naming
 
 ## Per-series naming settings, remembered so each series is set up only once.
-## Stored as a TOML subset: a `["<series>"]` table per series with `file_name`
-## (string), `padding` (integer) and `bitrate` (string), plus `#` comment lines.
+## Stored in `Config`'s TOML subset: a `["<series>"]` table per series with
+## `file_name` (string), `padding` (integer) and `bitrate` (string).
 Series :: {}.{
 
 	default_padding : U64
 	default_padding = 3
 
-	## `$XDG_CONFIG_HOME/audiobooks`, falling back to `~/.config/audiobooks`.
-	config_dir! : () => Try(Path, _)
-	config_dir! = || {
-		base = match Env.var_str!("XDG_CONFIG_HOME") {
-			Ok(dir) if !Str.is_empty(dir) => Path.unix(dir)
-			_ => Path.unix(Env.var_str!("HOME")?).join(".config")
-		}
-		Ok(base.join("audiobooks"))
-	}
-
 	config_file! : () => Try(Path, _)
-	config_file! = || Ok(config_dir!()?.join("series.toml"))
-
-	quote_byte : U8
-	quote_byte = 34
-
-	backslash_byte : U8
-	backslash_byte = 92
-
-	## Only the `\"` and `\\` escapes; nothing else a series name needs.
-	parse_string : Str -> Try(Str, Str)
-	parse_string = |text| {
-		bytes = Str.to_utf8(text)
-		if bytes.len() < 2 or !Str.starts_with(text, "\"") or !Str.ends_with(text, "\"") {
-			return Err("expected a \"quoted\" string, got ${text}")
-		}
-		var $out = []
-		var $escaped = False
-		for byte in bytes.sublist({ start: 1, len: bytes.len() - 2 }) {
-			if $escaped {
-				if byte != quote_byte and byte != backslash_byte {
-					return Err("only the \\\" and \\\\ escapes are supported")
-				}
-				$out = $out.append(byte)
-				$escaped = False
-			} else if byte == backslash_byte {
-				$escaped = True
-			} else if byte == quote_byte {
-				return Err("unescaped \" inside ${text}")
-			} else {
-				$out = $out.append(byte)
-			}
-		}
-		if $escaped {
-			Err("${text} ends inside an escape")
-		} else {
-			Str.from_utf8($out).map_err(|_| "invalid UTF-8 in ${text}")
-		}
-	}
-
-	quote : Str -> Str
-	quote = |text| "\"${Str.replace_each(Str.replace_each(text, "\\", "\\\\"), "\"", "\\\"")}\""
-
-	parse_line : Str -> Try([Blank, Table(Str), Entry(Str, Str)], Str)
-	parse_line = |line| {
-		text = Str.trim(line)
-		if Str.is_empty(text) or Str.starts_with(text, "#") {
-			Ok(Blank)
-		} else if Str.starts_with(text, "[") and Str.ends_with(text, "]") {
-			parse_string(Str.trim(Str.drop_suffix(Str.drop_prefix(text, "["), "]"))).map_ok(|name| Table(name))
-		} else {
-			match Str.split_first(text, "=") {
-				Ok(parts) => Ok(Entry(Str.trim(parts.before), Str.trim(parts.after)))
-				Err(_) => Err("expected [\"<series>\"] or key = value")
-			}
-		}
-	}
+	config_file! = || Ok(Config.dir!()?.join("series.toml"))
 
 	set_key : { name : Str, file_name : Str, padding : U64, bitrate : Try(Str, [Missing]), line : U64 }, Str, Str -> Try({ name : Str, file_name : Str, padding : U64, bitrate : Try(Str, [Missing]), line : U64 }, Str)
 	set_key = |series, key, value|
 		match key {
 			"file_name" => {
-				file_name = parse_string(value)?
+				file_name = Config.parse_string(value)?
 				Ok({ ..series, file_name: Naming.check_file_name(file_name)? })
 			}
 			"padding" => Ok({ ..series, padding: U64.from_str(value).map_err(|_| "padding must be a number, got ${value}")? })
 			"bitrate" => {
-				bitrate = parse_string(value)?
+				bitrate = Config.parse_string(value)?
 				Ok({ ..series, bitrate: Ok(Aac.check_bitrate(bitrate)?) })
 			}
 			_ => Err("unknown key ${key}, expected file_name, padding or bitrate")
@@ -99,7 +34,7 @@ Series :: {}.{
 	require_bitrate = |series|
 		match series.bitrate {
 			Ok(bitrate) => Ok({ name: series.name, file_name: series.file_name, padding: series.padding, bitrate })
-			Err(Missing) => Err(BadSeriesConfig(series.line, "${quote(series.name)} has no bitrate"))
+			Err(Missing) => Err(BadSeriesConfig(series.line, "${Config.quote(series.name)} has no bitrate"))
 		}
 
 	parse : Str -> Try(List({ name : Str, file_name : Str, padding : U64, bitrate : Str }), [BadSeriesConfig(U64, Str)])
@@ -109,7 +44,7 @@ Series :: {}.{
 		for line in Str.split_on(content, "\n") {
 			$line_nr = $line_nr + 1
 			nr = $line_nr
-			match parse_line(line) {
+			match Config.parse_line(line) {
 				Ok(Blank) => {}
 				Ok(Table(name)) => {
 					# A name that is already file-safe needs no file_name.
@@ -146,12 +81,12 @@ Series :: {}.{
 	find = |known, name| known.find_first(|series| Str.caseless_ascii_equals(series.name, name))
 
 	render : { name : Str, file_name : Str, padding : U64, bitrate : Str } -> Str
-	render = |series| "\n[${quote(series.name)}]\nfile_name = ${quote(series.file_name)}\npadding = ${series.padding.to_str()}\nbitrate = ${quote(series.bitrate)}\n"
+	render = |series| "\n[${Config.quote(series.name)}]\nfile_name = ${Config.quote(series.file_name)}\npadding = ${series.padding.to_str()}\nbitrate = ${Config.quote(series.bitrate)}\n"
 
 	## Appends, so comments and edits in the file survive.
 	save! : { name : Str, file_name : Str, padding : U64, bitrate : Str } => Try({}, _)
 	save! = |series| {
-		config_dir!()?.create_all!()?
+		Config.dir!()?.create_all!()?
 		config_file!()?.append_bytes!(Str.to_utf8(render(series)))
 	}
 }

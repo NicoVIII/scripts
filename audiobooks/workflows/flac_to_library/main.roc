@@ -41,19 +41,6 @@ ask_language! = || {
 parse_number : Str -> Try(U64, Str)
 parse_number = |answer| U64.from_str(answer).map_err(|_| "'${answer}' is not a number.")
 
-parse_yes_no : Str -> Try(Bool, Str)
-parse_yes_no = |answer|
-	if Str.caseless_ascii_equals(answer, "y") {
-		Ok(True)
-	} else if Str.caseless_ascii_equals(answer, "n") {
-		Ok(False)
-	} else {
-		Err("Answer y or n.")
-	}
-
-non_empty : Str -> Try(Str, Str)
-non_empty = |answer| if (Str.is_empty(answer)) Err("This can't be empty.") else Ok(answer)
-
 ## The same split as encode_audio_on_nas uses for books and radio plays.
 presets : List({ name : Str, bitrate : Str })
 presets = [{ name: "book", bitrate: "48k" }, { name: "play", bitrate: "64k" }]
@@ -89,7 +76,7 @@ ask_series_settings! = |known, series|
 			padding = Prompt.ask_parsed!("Pad the number in file names to how many digits", Series.default_padding.to_str(), parse_number)?
 			bitrate = ask_bitrate!()?
 			settings = { name: series, file_name, padding, bitrate }
-			remember = Prompt.ask_parsed!("Remember this for '${series}' in ${Series.config_file!()?.display()}? (y/n)", "y", parse_yes_no)?
+			remember = Prompt.ask_parsed!("Remember this for '${series}' in ${Series.config_file!()?.display()}? (y/n)", "y", Prompt.parse_yes_no)?
 			if remember {
 				Series.save!(settings)?
 			}
@@ -109,7 +96,7 @@ ask_naming! = |prepared| {
 	}
 	series = Prompt.ask!("Series (empty for a standalone book)", tagged_series)?
 	if Str.is_empty(series) {
-		title = Prompt.ask_parsed!("Title", FlacToMka.default_title(prepared), non_empty)?
+		title = Prompt.ask_parsed!("Title", FlacToMka.default_title(prepared), Prompt.non_empty)?
 		file_title = ask_file_safe!("title", title)?
 		return Ok({ title, file_stem: file_title, folder: [file_title], bitrate: ask_bitrate!()? })
 	}
@@ -119,7 +106,7 @@ ask_naming! = |prepared| {
 		_ => Err(NoMatch)
 	}
 	number = Prompt.ask_parsed!("Number", guess.map_ok(|parsed| parsed.number.to_str()) ?? "", parse_number)?
-	episode = Naming.elide_series(Prompt.ask_parsed!("Episode title", guess.map_ok(|parsed| parsed.episode) ?? "", non_empty)?, settings.name)
+	episode = Naming.elide_series(Prompt.ask_parsed!("Episode title", guess.map_ok(|parsed| parsed.episode) ?? "", Prompt.non_empty)?, settings.name)
 	file_episode = ask_file_safe!("episode title", episode)?
 	Ok({
 		title: Naming.title({ series: settings.name, number, episode }),
