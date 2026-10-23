@@ -54,7 +54,7 @@ parse_yes_no = |answer|
 non_empty : Str -> Try(Str, Str)
 non_empty = |answer| if (Str.is_empty(answer)) Err("This can't be empty.") else Ok(answer)
 
-## The same split as encode_audio_on_nas.py uses for books and radio plays.
+## The same split as encode_audio_on_nas uses for books and radio plays.
 presets : List({ name : Str, bitrate : Str })
 presets = [{ name: "book", bitrate: "48k" }, { name: "play", bitrate: "64k" }]
 
