@@ -73,7 +73,7 @@ Requires ffmpeg, metaflac and mkvmerge. Intermediate files go into a hidden fold
 tools/mka_to_aac.sh [--no-cover] <input.mka> <bitrate> [<output.m4a>]
 ```
 
-Encodes AAC HE v2 (bitrate like `48k`), by default into an m4a next to the input. It tries to keep the cover and falls back to audio only if ffmpeg can't. It runs ffmpeg in Docker (`jrottenberg/ffmpeg:ubuntu`), since distribution builds lack libfdk_aac; that image's ffmpeg 3.1 can't copy the cover, so the fallback currently always kicks in.
+Encodes AAC HE v2 (bitrate like `48k`), by default into an m4a next to the input. It tries to keep the cover and falls back to audio only if ffmpeg can't. It runs ffmpeg in Docker, since distribution builds lack libfdk_aac with HE-AAC. The image is pinned to `jrottenberg/ffmpeg:5.1-ubuntu`: newer ones have no HE-AAC, older ones can't keep the cover. See `shared/Aac.roc` before changing it.
 
 ### mka_to_opus
 
