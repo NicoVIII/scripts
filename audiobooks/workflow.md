@@ -6,17 +6,15 @@ I personally recommend to have two copies of your audiobooks. The original one f
 
 ### flac input
 
-If you have a list of flac files for each chapter of an audiobook, do this:
+If you have a folder with one flac file per chapter (named so that `sort -V` puts them in order), run:
 
-1. Run `merge_flac.sh <input_folder>` to merge the flac files into a single flac file and create chapters
-2. Use MKVToolNix to create the flac-mka
-    * Add the flac file
-    * Change the language on the audiostream (optional)
-    * Set the file title (optional)
-    * Add chapter file
-    * Set chapter language (optional)
-    * Add the cover image (optional)
-    * Set the file name
+```sh
+roc flac_to_mka.roc -- <input_folder> <cover_image>
+```
+
+It merges the flacs, takes chapter names from their `TITLE` tags (falling back to the file name), asks for language, title and output file name, and writes the mka with the cover (jpg or png) attached.
+
+Requires the new Roc compiler (nightly-2026-10-12 or later, from [roc-lang/nightlies](https://github.com/roc-lang/nightlies/releases)), ffmpeg, metaflac and mkvmerge. Intermediate files go into a hidden folder in the current directory, so it needs free space for one more copy of the book.
 
 ## m4b input
 
