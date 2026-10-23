@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Batch convert .mka files on a Samba share to .m4a with subfolder-specific bitrates.
-Requires: ffmpeg (via Docker), smbclient or cifs-utils, mka_to_aac.py in the same directory.
+Requires: ffmpeg (via Docker), smbclient or cifs-utils, roc for tools/mka_to_aac.sh.
 """
 
 import os
@@ -199,10 +199,10 @@ def copy_to_local_tmp(file_path: str, tmp_dir: str) -> str:
 
 def convert_mka_to_m4a(local_mka: str, bitrate: str, script_dir: str) -> Optional[str]:
     """
-    Convert .mka file using mka_to_aac.py script.
+    Convert .mka file using the mka_to_aac tool.
     Returns path to output .m4a file if successful, None otherwise.
     """
-    script_path = os.path.join(script_dir, "mka_to_aac.py")
+    script_path = os.path.join(script_dir, "..", "tools", "mka_to_aac.sh")
     
     if not os.path.isfile(script_path):
         logger.error(f"Conversion script not found: {script_path}")
@@ -213,7 +213,7 @@ def convert_mka_to_m4a(local_mka: str, bitrate: str, script_dir: str) -> Optiona
     try:
         # Do not capture output so converter progress/heartbeat is visible live.
         subprocess.run(
-            [sys.executable, script_path, local_mka, bitrate],
+            [script_path, local_mka, bitrate],
             cwd=tmp_dir,
             check=True,
             timeout=3600  # 1 hour timeout

@@ -1,7 +1,8 @@
 import shared.Chapters
 
 ## The scheme for series episodes: title "<series> <number> - <episode>", file
-## name the same but with a file-safe series name and a zero-padded number.
+## name the same but with a file-safe series name and a zero-padded number,
+## stored in "<series>/<number> - <episode>/".
 Naming :: {}.{
 
 	## Characters Windows and SMB shares reject in file names.
@@ -56,6 +57,9 @@ Naming :: {}.{
 	title : { series : Str, number : U64, episode : Str } -> Str
 	title = |parts| "${parts.series} ${parts.number.to_str()} - ${parts.episode}"
 
+	episode_folder : { padding : U64, number : U64, episode : Str } -> Str
+	episode_folder = |parts| "${Chapters.pad_left(parts.number, parts.padding)} - ${parts.episode}"
+
 	file_stem : { file_series : Str, padding : U64, number : U64, episode : Str } -> Str
 	file_stem = |parts| "${parts.file_series} ${Chapters.pad_left(parts.number, parts.padding)} - ${parts.episode}"
 }
@@ -72,3 +76,4 @@ expect Naming.parse_album("Folge 238: Falsche Schuld (Folge 238)") == Ok({ numbe
 expect Naming.parse_album("Der Hobbit") == Err(NoMatch)
 
 expect Naming.file_stem({ file_series: "Die drei Fragezeichen", padding: 3, number: 7, episode: "x" }) == "Die drei Fragezeichen 007 - x"
+expect Naming.episode_folder({ padding: 3, number: 7, episode: "x" }) == "007 - x"
