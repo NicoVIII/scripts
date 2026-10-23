@@ -2,6 +2,7 @@ import pf.Cmd
 import pf.Duration
 import pf.OsStr
 import pf.Path
+import Extension
 
 Flac :: {}.{
 
@@ -15,11 +16,7 @@ Flac :: {}.{
 		}
 
 	is_flac : Path -> Bool
-	is_flac = |path|
-		match path.ext() {
-			Ok(ext) => Str.caseless_ascii_equals(ext.display(), "flac")
-			Err(_) => False
-		}
+	is_flac = |path| Extension.matches(path, "flac")
 
 	## `sort -V` puts "2.flac" before "10.flac", like merge_flac.sh did.
 	version_sort! : List(Str) => Try(List(Str), _)

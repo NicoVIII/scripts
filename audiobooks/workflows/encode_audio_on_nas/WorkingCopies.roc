@@ -1,6 +1,6 @@
 import pf.Path
 import shared.Aac
-import shared.Cover
+import shared.Extension
 import shared.WorkDir
 
 ## Library entries keep their source mka in a "source/" folder and the m4a
@@ -27,7 +27,7 @@ WorkingCopies :: {}.{
 				IsDir => {
 					$found = scan_dir!(path, dir, $found)?
 				}
-				IsFile if in_source and Cover.has_ext(path, "mka") => {
+				IsFile if in_source and Extension.matches(path, "mka") => {
 					$found = $found.append({ mka: path, entry })
 				}
 				_ => {}

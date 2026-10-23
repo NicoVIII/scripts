@@ -23,3 +23,4 @@ Pitfalls hit so far:
 - An expression statement must be `{}`; discard other values with `_ =`.
 - `{ ..record, field }` can't add fields that `record` doesn't have.
 - `U64` subtraction below zero crashes at runtime; compare before subtracting.
+- `Path.ext` is everything after the *first* dot, so `a ... b.mka` has no `mka` extension; check extensions with `shared.Extension.matches`.
