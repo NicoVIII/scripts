@@ -49,9 +49,14 @@ bitrate = "64k"
 
 ### encode_audio_on_nas
 
-`workflows/encode_audio_on_nas.sh` creates the missing m4a working copies on the NAS from the source mka files in `source/` folders, using [`mka_to_aac`](#mka_to_aac). It asks for the Samba login and for sudo once, which it needs to mount each share with `mount.cifs` (cifs-utils).
+```sh
+workflows/encode_audio_on_nas.sh [--dry-run]
+```
 
-- A source is skipped if an m4a of the same name is next to its `source/` folder; that's also where a new m4a goes. It replaces an `.opus` or `.mka` working copy of the same name.
+It creates missing and outdated m4a working copies on the NAS from the source mka files in `source/` folders, using [`mka_to_aac`](#mka_to_aac). It asks for the Samba login and for sudo once, which it needs to mount each share with `mount.cifs` (cifs-utils). `--dry-run` lists what it would encode without changing anything.
+
+- The working copy is the m4a of the same name next to the `source/` folder. It's re-encoded if it has an older encoding version than the current one (see [`mka_to_aac`](#mka_to_aac)), or another bitrate than its share's. m4as made before the version tag existed count as outdated.
+- A new m4a replaces the old one only once it's fully copied, and also replaces an `.opus` or `.mka` working copy of the same name.
 - Each source is copied to a hidden folder in the current directory for encoding, so it needs free space for one book and its m4a.
 - A failed file is reported and the run goes on; a share that can't be mounted is skipped.
 
@@ -80,6 +85,8 @@ tools/mka_to_aac.sh [--no-cover] <input.mka> <bitrate> [<output.m4a>]
 ```
 
 Encodes AAC HE v2 (bitrate like `48k`), by default into an m4a next to the input. It tries to keep the cover and falls back to audio only if ffmpeg can't. It runs ffmpeg in Docker, since distribution builds lack libfdk_aac with HE-AAC. The image is pinned to `jrottenberg/ffmpeg:5.1-ubuntu`: newer ones have no HE-AAC, older ones can't keep the cover. See `shared/Aac.roc` before changing it.
+
+The m4a's encoding-tool tag records the encoding version and bitrate, e.g. `audiobooks-aac 1 48k`. After a change that alters the output, bump `version` in `shared/Aac.roc`; [`encode_audio_on_nas`](#encode_audio_on_nas) then re-encodes all older working copies.
 
 ### mka_to_opus
 

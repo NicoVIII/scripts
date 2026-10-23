@@ -5,6 +5,7 @@
 - `tools/` scripts take all input as arguments and never prompt. `workflows/` prompt and compose tools.
 - A Roc tool's logic lives in a `shared/` module; its `main.roc` only parses arguments. Roc workflows import that module instead of spawning the tool's script, so errors stay typed. A new shared module must be added to `package [...]` in `shared/main.roc`.
 - Each module with its own error tags has a `describe_error : _ -> Try(Str, [Unknown])`; an app's `describe_error` falls back to them before `Str.inspect`.
+- A change to what `Aac.encode!` produces (image, ffmpeg arguments) bumps `Aac.version`, or the library's existing working copies stay on the old encoding.
 - `just check` only type-checks and runs `expect`s. Verify media changes by running the script on real input (the user's rips are in `~/Downloads`), in a scratch directory with `XDG_CONFIG_HOME` pointed at a scratch config, and inspect the result with `ffprobe`/`mkvmerge -J`.
 
 ## Roc

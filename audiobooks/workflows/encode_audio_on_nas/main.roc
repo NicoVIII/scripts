@@ -1,8 +1,9 @@
-## Create the missing m4a working copies on the NAS from the source mkas in
-## the library entries' "source/" folders. Asks for the Samba login and sudo,
-## which mounts the shares.
+## Create the missing or outdated m4a working copies on the NAS from the
+## source mkas in the library entries' "source/" folders. Asks for the Samba
+## login and sudo, which mounts the shares. Working copies from an older encoding version or
+## with another bitrate are re-encoded; `--dry-run` only lists what would be.
 ##
-## Usage: encode_audio_on_nas.sh
+## Usage: encode_audio_on_nas.sh [--dry-run]
 app [main!] {
 	pf: platform "https://github.com/roc-lang/basic-cli/releases/download/0.26.0/GddgvsGjiNXrHFW6au5i5dUDbTs8FinQdrgE2Gqmw53t.tar.zst",
 	shared: "../../shared/main.roc",
@@ -53,46 +54,69 @@ describe_file_error = |err| describe_path_error(err) ?? (WorkingCopies.describe_
 describe_error : _ -> Str
 describe_error = |err|
 	match err {
-		Usage => "Usage: encode_audio_on_nas.sh"
+		Usage => "Usage: encode_audio_on_nas.sh [--dry-run]"
 		EmptyPassword => "The password can't be empty."
 		other => describe_path_error(other) ?? (Smb.describe_error(other) ?? Str.inspect(other))
 	}
 
-## Counts files whose working copy exists afterward. Failures are reported
-## and skipped; only an interrupt stops the run.
-encode_subfolder! : Path, Str => Try({ done : U64, total : U64 }, _)
-encode_subfolder! = |root, bitrate| {
+encode_source! : { mka : Path, entry : Path }, Str, { bitrate : Str, dry_run : Bool } => Try(Bool, _)
+encode_source! = |source, shown, options| {
+	if options.dry_run {
+		return Ok(False)
+	}
+	WorkingCopies.encode!(source, options.bitrate)?
+	Stdout.line!("OK   ${shown}")?
+	Ok(True)
+}
+
+## Prints what happens to the source; `Ok(True)` when its working copy is
+## current afterward.
+process_source! : { mka : Path, entry : Path }, Str, { bitrate : Str, dry_run : Bool } => Try(Bool, _)
+process_source! = |source, shown, options|
+	match WorkingCopies.status!(source, options.bitrate)? {
+		Current => {
+			Stdout.line!("SKIP ${shown}")?
+			Ok(True)
+		}
+		Missing => {
+			Stdout.line!("RUN  ${shown}")?
+			encode_source!(source, shown, options)
+		}
+		Outdated(why) => {
+			Stdout.line!("REDO ${shown} (${why})")?
+			encode_source!(source, shown, options)
+		}
+	}
+
+## Counts sources whose working copy is current afterward. Failures are
+## reported and skipped; only an interrupt stops the run.
+encode_subfolder! : Path, { bitrate : Str, dry_run : Bool } => Try({ done : U64, total : U64 }, _)
+encode_subfolder! = |root, options| {
 	sources = WorkingCopies.scan!(root)?
 	Stdout.line!("Found ${sources.len().to_str()} .mka file(s)")?
 	var $done = 0
 	for source in sources {
 		shown = relative(source.mka, root)
-		if WorkingCopies.has_working_copy!(source)? {
-			Stdout.line!("SKIP ${shown}")?
-			$done = $done + 1
-		} else {
-			Stdout.line!("RUN  ${shown}")?
-			match WorkingCopies.encode!(source, bitrate) {
-				Ok({}) => {
-					Stdout.line!("OK   ${shown}")?
-					$done = $done + 1
-				}
-				Err(Interrupted) => return Err(Interrupted)
-				Err(err) => Stderr.line!("FAIL ${shown}: ${describe_file_error(err)}")?
+		match process_source!(source, shown, options) {
+			Ok(True) => {
+				$done = $done + 1
 			}
+			Ok(False) => {}
+			Err(Interrupted) => return Err(Interrupted)
+			Err(err) => Stderr.line!("FAIL ${shown}: ${describe_file_error(err)}")?
 		}
 	}
 	Ok({ done: $done, total: sources.len() })
 }
 
-encode_share! : Path, { name : Str, subfolders : List(Str), bitrate : Str } => Try({ done : U64, total : U64 }, _)
-encode_share! = |mount_point, share| {
+encode_share! : Path, { name : Str, subfolders : List(Str), bitrate : Str }, Bool => Try({ done : U64, total : U64 }, _)
+encode_share! = |mount_point, share, dry_run| {
 	var $counts = { done: 0, total: 0 }
 	for subfolder in share.subfolders {
 		Stdout.line!("Subfolder ${if (Str.is_empty(subfolder)) "/" else subfolder} | bitrate ${share.bitrate}")?
 		root = if (Str.is_empty(subfolder)) mount_point else mount_point.join(subfolder)
 		if root.is_dir!()? {
-			counts = encode_subfolder!(root, share.bitrate)?
+			counts = encode_subfolder!(root, { bitrate: share.bitrate, dry_run })?
 			$counts = { done: $counts.done + counts.done, total: $counts.total + counts.total }
 		} else {
 			Stderr.line!("Subfolder does not exist: ${root.display()}")?
@@ -102,13 +126,13 @@ encode_share! = |mount_point, share| {
 }
 
 ## A share that can't be mounted is skipped.
-encode_shares! : { username : Str, password : Str, domain : Str } => Try({ done : U64, total : U64 }, _)
-encode_shares! = |credentials| {
+encode_shares! : { username : Str, password : Str, domain : Str }, Bool => Try({ done : U64, total : U64 }, _)
+encode_shares! = |credentials, dry_run| {
 	var $counts = { done: 0, total: 0 }
 	for share in shares {
 		unc = "//${server}/${share.name}"
 		Stdout.line!("\nShare ${unc}")?
-		match Smb.with_mount!(unc, credentials, |mount_point| encode_share!(mount_point, share)) {
+		match Smb.with_mount!(unc, credentials, |mount_point| encode_share!(mount_point, share, dry_run)) {
 			Ok(counts) => {
 				$counts = { done: $counts.done + counts.done, total: $counts.total + counts.total }
 			}
@@ -119,19 +143,33 @@ encode_shares! = |credentials| {
 	Ok($counts)
 }
 
+parse_args : List(OsStr) -> Try({ dry_run : Bool }, [Usage])
+parse_args = |args|
+	match args {
+		[] => Ok({ dry_run: False })
+		[flag] if flag == OsStr.from_str("--dry-run") => Ok({ dry_run: True })
+		_ => Err(Usage)
+	}
+
+summary : { done : U64, total : U64 }, Bool -> Str
+summary = |counts, dry_run|
+	if dry_run {
+		"${(counts.total - counts.done).to_str()} of ${counts.total.to_str()} would be encoded"
+	} else {
+		"Done: ${counts.done.to_str()}/${counts.total.to_str()} successful"
+	}
+
 run! : List(OsStr) => Try({}, _)
 run! = |args| {
-	if !args.is_empty() {
-		return Err(Usage)
-	}
+	parsed = parse_args(args)?
 	username = Prompt.ask_parsed!("Samba username", "", non_empty)?
 	password = Prompt.ask_secret!("Samba password")?
 	if Str.is_empty(password) {
 		return Err(EmptyPassword)
 	}
 	Stdout.line!("Authorizing sudo once for mount/unmount...")?
-	counts = Smb.with_sudo!(|| encode_shares!({ username, password, domain }))?
-	Stdout.line!("\nDone: ${counts.done.to_str()}/${counts.total.to_str()} successful")
+	counts = Smb.with_sudo!(|| encode_shares!({ username, password, domain }, parsed.dry_run))?
+	Stdout.line!("\n${summary(counts, parsed.dry_run)}")
 }
 
 main! : List(OsStr) => Try({}, _)

@@ -44,13 +44,40 @@ WorkingCopies :: {}.{
 	m4a_name = |source| "${stem(file_name(source.mka))}.m4a"
 
 	## Only the m4a next to the source folder counts, since that's where
-	## `encode!` puts it.
-	has_working_copy! : { mka : Path, entry : Path } => Try(Bool, _)
-	has_working_copy! = |source| source.entry.join(m4a_name(source)).exists!()
+	## `encode!` puts it. One encoded by a newer version of these scripts is
+	## left alone rather than downgraded.
+	status! : { mka : Path, entry : Path }, Str => Try([Missing, Outdated(Str), Current], _)
+	status! = |source, bitrate| {
+		m4a = source.entry.join(m4a_name(source))
+		if !m4a.exists!()? {
+			return Ok(Missing)
+		}
+		match Aac.read_encoding!(m4a) {
+			Err(Untagged) => Ok(Outdated("no encoding version"))
+			Err(err) => Err(err)
+			Ok(encoding) if encoding.version < Aac.version => Ok(Outdated("encoding version ${encoding.version.to_str()}, now ${Aac.version.to_str()}"))
+			Ok(encoding) if !Str.caseless_ascii_equals(encoding.bitrate, bitrate) => Ok(Outdated("bitrate ${encoding.bitrate}, now ${bitrate}"))
+			Ok(_) => Ok(Current)
+		}
+	}
+
+	## Copies under a temporary name and renames, so neither a half-copied m4a
+	## nor a missing one is left on the share if the copy fails.
+	replace! : Path, Path => Try({}, _)
+	replace! = |local, target| {
+		part = Path.unix("${target.display()}.part")
+		match local.copy!(part) {
+			Ok({}) => part.rename!(target)
+			Err(err) => {
+				Aac.remove_if_exists!(part)?
+				Err(err)
+			}
+		}
+	}
 
 	## Encodes a local copy rather than reading the share for the whole
-	## encode. The m4a replaces working copies of the same name in older
-	## formats.
+	## encode. The m4a replaces an outdated one and working copies of the same
+	## name in older formats.
 	encode! : { mka : Path, entry : Path }, Str => Try({}, _)
 	encode! = |source, bitrate|
 		WorkDir.in_cwd!(
@@ -60,15 +87,7 @@ WorkingCopies :: {}.{
 				local_m4a = work_dir.join(name)
 				source.mka.copy!(local_mka)?
 				Aac.encode!({ input: local_mka, output: local_m4a, bitrate, cover: True })?
-				m4a = source.entry.join(name)
-				# A partial copy would count as done on the next run.
-				match local_m4a.copy!(m4a) {
-					Ok({}) => {}
-					Err(err) => {
-						Aac.remove_if_exists!(m4a)?
-						return Err(err)
-					}
-				}
+				replace!(local_m4a, source.entry.join(name))?
 				for ext in ["opus", "mka"] {
 					Aac.remove_if_exists!(source.entry.join("${stem(name)}.${ext}"))?
 				}

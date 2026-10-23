@@ -14,6 +14,40 @@ Aac :: {}.{
 	image : Str
 	image = "jrottenberg/ffmpeg:5.1-ubuntu@sha256:478e5de92d31a88fcd643dc2d3dbb0c48f08d87c0df9cc455e1a1f9c2498704c"
 
+	## Written into every m4a, so encode_audio_on_nas can find working copies
+	## from an older encoding. Bump it with any change that alters the output;
+	## the next run then re-encodes all older working copies. Version 1 is the
+	## first that keeps the cover; untagged m4as predate it.
+	version : U64
+	version = 1
+
+	## ffmpeg's `encoding_tool` is the iTunes ©too atom, which players leave
+	## alone. A key of our own would need `-movflags use_metadata_tags`, which
+	## moves every tag out of the iTunes atoms and drops the cover.
+	encoding_tag : Str -> Str
+	encoding_tag = |bitrate| "audiobooks-aac ${version.to_str()} ${bitrate}"
+
+	parse_encoding_tag : Str -> Try({ version : U64, bitrate : Str }, [Untagged])
+	parse_encoding_tag = |tag|
+		match Str.split_on(Str.trim(tag), " ") {
+			["audiobooks-aac", tag_version, bitrate] =>
+				match U64.from_str(tag_version) {
+					Ok(number) => Ok({ version: number, bitrate })
+					Err(_) => Err(Untagged)
+				}
+			_ => Err(Untagged)
+		}
+
+	## The version and bitrate an m4a was encoded with.
+	read_encoding! : Path => Try({ version : U64, bitrate : Str }, _)
+	read_encoding! = |m4a| {
+		tag = Cmd.new("ffprobe")
+			.args(["-v", "error", "-show_entries", "format_tags=encoder", "-of", "default=noprint_wrappers=1:nokey=1"])
+			.arg(m4a.to_os_str())
+			.capture!()?
+		parse_encoding_tag(tag)
+	}
+
 	## Accepts e.g. 48k or 64K, the form ffmpeg's -b:a takes.
 	check_bitrate : Str -> Try(Str, Str)
 	check_bitrate = |bitrate| {
@@ -53,6 +87,7 @@ Aac :: {}.{
 				"-i", "/input/${spec.input.name}",
 				"-map", "0:a:0", "-sn", "-dn",
 				"-c:a", "libfdk_aac", "-profile:a", "aac_he_v2", "-b:a", spec.bitrate,
+				"-metadata", "encoding_tool=${encoding_tag(spec.bitrate)}",
 			],
 			List.concat(cover_args, ["/output/${spec.output.name}"]),
 		)
@@ -123,6 +158,8 @@ Aac :: {}.{
 		}
 }
 
+expect Aac.parse_encoding_tag(Aac.encoding_tag("48k")) == Ok({ version: Aac.version, bitrate: "48k" })
+expect Aac.parse_encoding_tag("Lavf59.27.100\n") == Err(Untagged)
 expect Aac.check_bitrate("48k") == Ok("48k")
 expect Aac.check_bitrate("48").is_err()
 expect Aac.check_bitrate("k").is_err()
