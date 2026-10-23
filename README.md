@@ -8,4 +8,4 @@ The Roc scripts need the new Roc compiler (nightly-2026-10-12 or later, from [ro
 
 Each script is a folder with a `main.roc` entry point and a `<script>.sh` wrapper next to it, which is what you run. Modules used by several scripts of a category live in that category's `shared/` package (e.g. `audiobooks/shared/`), which apps import with `shared: "../shared/main.roc"`.
 
-The basic-cli URL is repeated in every app header and every `shared/main.roc`, so upgrade them together. Check a script with `roc check <script>/main.roc` and `roc test <script>/main.roc`; the tests include the shared modules it imports.
+The basic-cli URL is repeated in every app header and every `shared/main.roc`. `./roc-upgrade-basic-cli.sh <version>` replaces all of them, shows which compiler nightly the release needs, and checks and tests every app; fixing what the new version breaks stays manual. Check a script with `roc check <script>/main.roc` and `roc test <script>/main.roc`; the tests include the shared modules it imports.
