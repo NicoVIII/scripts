@@ -4,8 +4,8 @@ Chapters :: {}.{
 	pad_left : U64, U64 -> Str
 	pad_left = |n, width| {
 		digits = n.to_str()
-		missing = width - Str.to_utf8(digits).len()
-		"${Str.repeat("0", missing)}${digits}"
+		len = Str.to_utf8(digits).len()
+		if len >= width digits else "${Str.repeat("0", width - len)}${digits}"
 	}
 
 	format_timestamp : Duration -> Str
@@ -43,3 +43,5 @@ expect {
 	thirds = List.repeat({ title: "", duration: Duration.nanos(333_333_334) }, 4)
 	Str.contains(Chapters.to_ogm(thirds), "CHAPTER4=00:00:01.000")
 }
+
+expect Chapters.pad_left(1234, 3) == "1234"
