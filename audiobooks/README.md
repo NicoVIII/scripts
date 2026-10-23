@@ -21,21 +21,30 @@ For a folder with one flac file per chapter (named so that `sort -V` puts them i
 workflows/flac_to_library.sh <input_folder> <cover_image>
 ```
 
-It asks for language, title and output file name, then packs the book with [`flac_to_mka`](#flac_to_mka).
+It asks for language, naming, working copy bitrate and the library folder (which must exist), then creates the entry with [`flac_to_mka`](#flac_to_mka) and [`mka_to_aac`](#mka_to_aac):
 
-For a series episode it builds the names from series, number and episode title, which it suggests from the `ALBUMARTIST` and `ALBUM` tags:
+```
+<library>/Die drei Fragezeichen/214 - ... und der Geisterbunker/
+├── Die drei Fragezeichen 214 - ... und der Geisterbunker.m4a
+└── source/
+    ├── .ignore
+    └── Die drei Fragezeichen 214 - ... und der Geisterbunker.mka
+```
 
-- Title: `Die drei ??? 214 - ... und der Geisterbunker`. An episode title starting with the series name gets it replaced by `...`.
-- File name: `Die drei Fragezeichen 214 - ... und der Geisterbunker.mka`, with a file-safe series name and the number zero-padded. Names with characters Windows/SMB reject (`\ / : * ? " < > |`) or a trailing dot or space are refused.
+- The title is `Die drei ??? 214 - ... und der Geisterbunker`. An episode title starting with the series name gets it replaced by `...`. Series, number and episode are suggested from the `ALBUMARTIST` and `ALBUM` tags.
+- File and folder names use a file-safe series name and the number zero-padded. If a series name, episode title or book title contains characters Windows/SMB reject (`\ / : * ? " < > |`) or ends in a dot or space, you're asked for a file-safe variant.
+- Bitrate presets: `book` (48k) and `play` (64k), or any bitrate like `56k`.
+- Leave the series empty for a standalone book: you're asked for the title instead, and the entry is `<library>/<title>/`.
 
-Leave the series empty for a standalone book; you're then asked for the title directly.
+If the merge fails, the entry is removed again. If only the encode fails, the source is kept and the error shows the `mka_to_aac` command to retry.
 
-The first time a series comes up, it asks for its file-safe name (only if needed) and the padding (default 3), and offers to remember them in `~/.config/audiobooks/series.toml` (`$XDG_CONFIG_HOME` is honoured). Later runs skip those questions; the series name is matched ignoring case, so the spelling you saved wins over the tag's. The file is plain TOML you can edit:
+The first time a series comes up, it asks for its file-safe name (only if needed), the padding (default 3) and the bitrate, and offers to remember them in `~/.config/audiobooks/series.toml` (`$XDG_CONFIG_HOME` is honoured). Later runs skip those questions; the series name is matched ignoring case, so the spelling you saved wins over the tag's. The file is plain TOML you can edit:
 
 ```toml
 ["Die drei ???"]
 file_name = "Die drei Fragezeichen"
 padding = 3
+bitrate = "64k"
 ```
 
 ### encode_audio_on_nas

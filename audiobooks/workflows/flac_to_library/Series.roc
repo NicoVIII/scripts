@@ -1,10 +1,11 @@
 import pf.Env
 import pf.Path
+import shared.Aac
 import Naming
 
 ## Per-series naming settings, remembered so each series is set up only once.
 ## Stored as a TOML subset: a `["<series>"]` table per series with `file_name`
-## (string) and `padding` (integer), plus `#` comment lines.
+## (string), `padding` (integer) and `bitrate` (string), plus `#` comment lines.
 Series :: {}.{
 
 	default_padding : U64
@@ -78,7 +79,7 @@ Series :: {}.{
 		}
 	}
 
-	set_key : { name : Str, file_name : Str, padding : U64 }, Str, Str -> Try({ name : Str, file_name : Str, padding : U64 }, Str)
+	set_key : { name : Str, file_name : Str, padding : U64, bitrate : Try(Str, [Missing]), line : U64 }, Str, Str -> Try({ name : Str, file_name : Str, padding : U64, bitrate : Try(Str, [Missing]), line : U64 }, Str)
 	set_key = |series, key, value|
 		match key {
 			"file_name" => {
@@ -86,10 +87,22 @@ Series :: {}.{
 				Ok({ ..series, file_name: Naming.check_file_name(file_name)? })
 			}
 			"padding" => Ok({ ..series, padding: U64.from_str(value).map_err(|_| "padding must be a number, got ${value}")? })
-			_ => Err("unknown key ${key}, expected file_name or padding")
+			"bitrate" => {
+				bitrate = parse_string(value)?
+				Ok({ ..series, bitrate: Ok(Aac.check_bitrate(bitrate)?) })
+			}
+			_ => Err("unknown key ${key}, expected file_name, padding or bitrate")
 		}
 
-	parse : Str -> Try(List({ name : Str, file_name : Str, padding : U64 }), [BadSeriesConfig(U64, Str)])
+	## Unlike the others, the bitrate has no sensible default.
+	require_bitrate : { name : Str, file_name : Str, padding : U64, bitrate : Try(Str, [Missing]), line : U64 } -> Try({ name : Str, file_name : Str, padding : U64, bitrate : Str }, [BadSeriesConfig(U64, Str)])
+	require_bitrate = |series|
+		match series.bitrate {
+			Ok(bitrate) => Ok({ name: series.name, file_name: series.file_name, padding: series.padding, bitrate })
+			Err(Missing) => Err(BadSeriesConfig(series.line, "${quote(series.name)} has no bitrate"))
+		}
+
+	parse : Str -> Try(List({ name : Str, file_name : Str, padding : U64, bitrate : Str }), [BadSeriesConfig(U64, Str)])
 	parse = |content| {
 		var $series = []
 		var $line_nr = 0
@@ -100,7 +113,7 @@ Series :: {}.{
 				Ok(Blank) => {}
 				Ok(Table(name)) => {
 					# A name that is already file-safe needs no file_name.
-					$series = $series.append({ name, file_name: name, padding: default_padding })
+					$series = $series.append({ name, file_name: name, padding: default_padding, bitrate: Err(Missing), line: nr })
 				}
 				Ok(Entry(key, value)) => {
 					current = $series.last().map_err(|_| BadSeriesConfig(nr, "${key} is outside a [\"<series>\"] table"))?
@@ -110,11 +123,11 @@ Series :: {}.{
 				Err(message) => return Err(BadSeriesConfig(nr, message))
 			}
 		}
-		Ok($series)
+		$series.map_try(require_bitrate)
 	}
 
 	## A missing file means no series is set up yet.
-	load! : () => Try(List({ name : Str, file_name : Str, padding : U64 }), _)
+	load! : () => Try(List({ name : Str, file_name : Str, padding : U64, bitrate : Str }), _)
 	load! = || {
 		path = config_file!()?
 		match path.read_utf8!() {
@@ -129,14 +142,14 @@ Series :: {}.{
 	}
 
 	## The table names keep the user's spelling; tags often differ in case.
-	find : List({ name : Str, file_name : Str, padding : U64 }), Str -> Try({ name : Str, file_name : Str, padding : U64 }, [NotFound])
+	find : List({ name : Str, file_name : Str, padding : U64, bitrate : Str }), Str -> Try({ name : Str, file_name : Str, padding : U64, bitrate : Str }, [NotFound])
 	find = |known, name| known.find_first(|series| Str.caseless_ascii_equals(series.name, name))
 
-	render : { name : Str, file_name : Str, padding : U64 } -> Str
-	render = |series| "\n[${quote(series.name)}]\nfile_name = ${quote(series.file_name)}\npadding = ${series.padding.to_str()}\n"
+	render : { name : Str, file_name : Str, padding : U64, bitrate : Str } -> Str
+	render = |series| "\n[${quote(series.name)}]\nfile_name = ${quote(series.file_name)}\npadding = ${series.padding.to_str()}\nbitrate = ${quote(series.bitrate)}\n"
 
 	## Appends, so comments and edits in the file survive.
-	save! : { name : Str, file_name : Str, padding : U64 } => Try({}, _)
+	save! : { name : Str, file_name : Str, padding : U64, bitrate : Str } => Try({}, _)
 	save! = |series| {
 		config_dir!()?.create_all!()?
 		config_file!()?.append_bytes!(Str.to_utf8(render(series)))
@@ -144,11 +157,12 @@ Series :: {}.{
 }
 
 expect {
-	series = { name: "Die \"drei\" ???\\", file_name: "Die drei Fragezeichen", padding: 2 }
+	series = { name: "Die \"drei\" ???\\", file_name: "Die drei Fragezeichen", padding: 2, bitrate: "64k" }
 	Series.parse(Series.render(series)) == Ok([series])
 }
 
-expect Series.parse("# comment\n[\"TKKG\"]\n") == Ok([{ name: "TKKG", file_name: "TKKG", padding: 3 }])
+expect Series.parse("# comment\n[\"TKKG\"]\nbitrate = \"64k\"\n") == Ok([{ name: "TKKG", file_name: "TKKG", padding: 3, bitrate: "64k" }])
+expect Series.parse("\n[\"TKKG\"]\n") == Err(BadSeriesConfig(2, "\"TKKG\" has no bitrate"))
 expect Series.parse("padding = 2") == Err(BadSeriesConfig(1, "padding is outside a [\"<series>\"] table"))
 expect Series.parse("[\"X\"]\nfile_name = \"a?\"").is_err()
-expect Series.find([{ name: "Die drei ???", file_name: "f", padding: 3 }], "Die Drei ???").is_ok()
+expect Series.find([{ name: "Die drei ???", file_name: "f", padding: 3, bitrate: "64k" }], "Die Drei ???").is_ok()

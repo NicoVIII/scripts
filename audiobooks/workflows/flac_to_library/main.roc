@@ -1,6 +1,7 @@
-## Pack a folder of per-chapter FLAC files and a cover image into a chaptered
-## source .mka. Asks for language, series naming, title and output file name
-## interactively.
+## Turn a folder of per-chapter FLAC files and a cover image into a library
+## entry: "<library>/<series>/<number> - <episode>/" holding the AAC working
+## copy, with the chaptered source .mka in its "source/" folder. Asks for
+## language, naming, bitrate and library folder interactively.
 ##
 ## Usage: flac_to_library.sh <flac_folder> <cover_image>
 app [main!] {
@@ -12,6 +13,7 @@ import pf.OsStr
 import pf.Path
 import pf.Stdout
 import pf.Stderr
+import shared.Aac
 import shared.FlacToMka
 import shared.Mkvmerge
 import shared.Prompt
@@ -52,18 +54,41 @@ parse_yes_no = |answer|
 non_empty : Str -> Try(Str, Str)
 non_empty = |answer| if (Str.is_empty(answer)) Err("This can't be empty.") else Ok(answer)
 
+## The same split as encode_audio_on_nas.py uses for books and radio plays.
+presets : List({ name : Str, bitrate : Str })
+presets = [{ name: "book", bitrate: "48k" }, { name: "play", bitrate: "64k" }]
+
+parse_preset : Str -> Try(Str, Str)
+parse_preset = |answer|
+	match presets.find_first(|preset| preset.name == answer) {
+		Ok(preset) => Ok(preset.bitrate)
+		Err(NotFound) => Aac.check_bitrate(answer).map_err(|_| "Answer a preset name or a bitrate like 56k.")
+	}
+
+ask_bitrate! : () => Try(Str, _)
+ask_bitrate! = || {
+	choices = Str.join_with(presets.map(|preset| "${preset.name} (${preset.bitrate})"), ", ")
+	Prompt.ask_parsed!("Working copy bitrate: ${choices} or e.g. 56k", "", parse_preset)
+}
+
+## Only asks when `value` can't be used as is.
+ask_file_safe! : Str, Str => Try(Str, _)
+ask_file_safe! = |what, value|
+	match Naming.check_file_name(value) {
+		Ok(_) => Ok(value)
+		Err(_) => Prompt.ask_parsed!("'${value}' can't be used in file names. File-safe ${what}", "", Naming.check_file_name)
+	}
+
 ## Settings of a series not set up yet are asked once and offered for saving.
-ask_series_settings! : List({ name : Str, file_name : Str, padding : U64 }), Str => Try({ name : Str, file_name : Str, padding : U64 }, _)
+ask_series_settings! : List({ name : Str, file_name : Str, padding : U64, bitrate : Str }), Str => Try({ name : Str, file_name : Str, padding : U64, bitrate : Str }, _)
 ask_series_settings! = |known, series|
 	match Series.find(known, series) {
 		Ok(settings) => Ok(settings)
 		Err(NotFound) => {
-			file_name = match Naming.check_file_name(series) {
-				Ok(_) => series
-				Err(_) => Prompt.ask_parsed!("'${series}' can't be used in file names. File-safe series name", "", Naming.check_file_name)?
-			}
+			file_name = ask_file_safe!("series name", series)?
 			padding = Prompt.ask_parsed!("Pad the number in file names to how many digits", Series.default_padding.to_str(), parse_number)?
-			settings = { name: series, file_name, padding }
+			bitrate = ask_bitrate!()?
+			settings = { name: series, file_name, padding, bitrate }
 			remember = Prompt.ask_parsed!("Remember this for '${series}' in ${Series.config_file!()?.display()}? (y/n)", "y", parse_yes_no)?
 			if remember {
 				Series.save!(settings)?
@@ -72,8 +97,9 @@ ask_series_settings! = |known, series|
 		}
 	}
 
-## Tags only seed the defaults, since they vary between releases.
-ask_naming! : { folder : Path, infos : List({ album : Try(Str, _), album_artist : Try(Str, _), .. }), .. } => Try({ title : Str, file_stem : Str }, _)
+## Tags only seed the defaults, since they vary between releases. `folder` is
+## the entry's path below the library folder.
+ask_naming! : { folder : Path, infos : List({ album : Try(Str, _), album_artist : Try(Str, _), .. }), .. } => Try({ title : Str, file_stem : Str, folder : List(Str), bitrate : Str }, _)
 ask_naming! = |prepared| {
 	infos = prepared.infos
 	known = Series.load!()?
@@ -84,7 +110,8 @@ ask_naming! = |prepared| {
 	series = Prompt.ask!("Series (empty for a standalone book)", tagged_series)?
 	if Str.is_empty(series) {
 		title = Prompt.ask_parsed!("Title", FlacToMka.default_title(prepared), non_empty)?
-		return Ok({ title, file_stem: title })
+		file_title = ask_file_safe!("title", title)?
+		return Ok({ title, file_stem: file_title, folder: [file_title], bitrate: ask_bitrate!()? })
 	}
 	settings = ask_series_settings!(known, series)?
 	guess = match infos.first() {
@@ -93,31 +120,31 @@ ask_naming! = |prepared| {
 	}
 	number = Prompt.ask_parsed!("Number", guess.map_ok(|parsed| parsed.number.to_str()) ?? "", parse_number)?
 	episode = Naming.elide_series(Prompt.ask_parsed!("Episode title", guess.map_ok(|parsed| parsed.episode) ?? "", non_empty)?, settings.name)
+	file_episode = ask_file_safe!("episode title", episode)?
 	Ok({
 		title: Naming.title({ series: settings.name, number, episode }),
-		file_stem: Naming.file_stem({ file_series: settings.file_name, padding: settings.padding, number, episode }),
+		file_stem: Naming.file_stem({ file_series: settings.file_name, padding: settings.padding, number, episode: file_episode }),
+		folder: [settings.file_name, Naming.episode_folder({ padding: settings.padding, number, episode: file_episode })],
+		bitrate: settings.bitrate,
 	})
 }
 
-## An invalid default would only be rejected again, so none is offered.
-default_output : Str -> Str
-default_output = |file_stem| {
-	file = "${file_stem}.mka"
-	if (Naming.check_file_name(file).is_ok()) file else ""
-}
+join_all : Path, List(Str) -> Path
+join_all = |base, parts| parts.fold(base, |path, part| path.join(part))
 
-ask_output! : Str => Try(Path, _)
-ask_output! = |default|
+## The library folder must exist, so a typo doesn't create a stray tree.
+ask_entry! : List(Str) => Try(Path, _)
+ask_entry! = |folder|
 	Prompt.ask_valid!(
-		"Output file",
-		default,
+		"Library folder",
+		".",
 		|answer| {
-			_ = Naming.check_file_name(Str.split_last(answer, "/").map_ok(|parts| parts.after) ?? answer)?
-			output = Path.unix(answer)
-			match output.exists!() {
-				Ok(False) => Ok(output)
-				Ok(True) => Err("'${answer}' already exists, choose another name.")
-				Err(err) => Err("Can't check '${answer}': ${Str.inspect(err)}")
+			entry = join_all(Path.unix(answer), folder)
+			match (Path.unix(answer).is_dir!(), entry.exists!()) {
+				(Ok(True), Ok(False)) => Ok(entry)
+				(Ok(True), Ok(True)) => Err("'${entry.display()}' already exists.")
+				(Ok(False), _) => Err("'${answer}' is not a folder.")
+				(Err(err), _) | (_, Err(err)) => Err("Can't check '${answer}': ${Str.inspect(err)}")
 			}
 		},
 	)
@@ -128,9 +155,26 @@ run! = |args| {
 	prepared = FlacToMka.prepare!(parsed.folder, parsed.cover)?
 	language = ask_language!()?
 	naming = ask_naming!(prepared)?
-	output = ask_output!(default_output(naming.file_stem))?
-	FlacToMka.write!(prepared, { output, title: naming.title, language })?
-	Stdout.line!("Created ${output.display()}")
+	entry = ask_entry!(naming.folder)?
+
+	source = entry.join("source")
+	source.create_all!()?
+	# The NAS library skips folders marked like this, so it lists only the
+	# working copy.
+	source.join(".ignore").write_bytes!([])?
+	mka = source.join("${naming.file_stem}.mka")
+	# A half-made entry would block the next attempt.
+	match FlacToMka.write!(prepared, { output: mka, title: naming.title, language }) {
+		Ok({}) => {}
+		Err(err) => {
+			entry.delete_all!()?
+			return Err(err)
+		}
+	}
+	# A failed encode keeps the entry: the source is the slow part to make.
+	m4a = entry.join("${naming.file_stem}.m4a")
+	Aac.encode!({ input: mka, output: m4a, bitrate: naming.bitrate, cover: True }).map_err(|err| EncodeFailed(mka, m4a, naming.bitrate, err))?
+	Stdout.line!("Created ${entry.display()}")
 }
 
 describe_error : _ -> Str
@@ -139,6 +183,10 @@ describe_error = |err|
 		Usage => "Usage: flac_to_library.sh <flac_folder> <cover_image>"
 		PathErr(NotFound, path) => "'${path.display()}' does not exist."
 		BadSeriesConfig(path, line, message) => "${path.display()}, line ${line.to_str()}: ${message}"
+		EncodeFailed(mka, m4a, bitrate, cause) => {
+			reason = Aac.describe_error(cause) ?? Str.inspect(cause)
+			"Encoding failed: ${reason}\nThe source is kept; retry with: tools/mka_to_aac.sh '${mka.display()}' ${bitrate} '${m4a.display()}'"
+		}
 		other => FlacToMka.describe_error(other) ?? Str.inspect(other)
 	}
 
