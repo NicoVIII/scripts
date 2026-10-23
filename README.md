@@ -15,3 +15,5 @@ The basic-cli URL is repeated in every app header and every `shared/main.roc`. `
 `just check` runs everything CI runs: `roc check` and `roc test` on every Roc app (including the shared modules it imports) and shellcheck on all `.sh` files. The Python scripts are not checked.
 
 CI runs it inside the devcontainer, so `.devcontainer/devcontainer.json` is the only place tool versions are pinned; bump them there, not in the workflow, and commit the refreshed `devcontainer-lock.json` with it. When adding a tool, take its feature from the first source that has one: official `ghcr.io/devcontainers/features`, the tool's own maintainers, [NicoVIII/devcontainer-features](https://github.com/NicoVIII/devcontainer-features), then `ghcr.io/devcontainers-extra/features`. The container holds only the check tools; the media scripts themselves run on the host.
+
+Dependabot (`.github/dependabot.yml`) opens weekly PRs for the workflow's actions and the devcontainer feature references. It does not see the tool versions in the feature options, the base image tag, or the basic-cli platform URL; bump those by hand.

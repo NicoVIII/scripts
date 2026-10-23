@@ -1,0 +1,33 @@
+# Two groups per ecosystem, split by update level, so one major bump never
+# holds back the safe minor/patch ones in the same PR.
+#
+# Not covered, still bumped by hand:
+# - Tool versions pinned in devcontainer feature options (roc, just,
+#   shellcheck): Dependabot only updates the feature references themselves.
+# - The base image tag in devcontainer.json.
+# - The Roc basic-cli platform URL in audiobooks/shared/main.roc.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
+        update-types: [minor, patch]
+      github-actions-major:
+        patterns: ["*"]
+        update-types: [major]
+
+  - package-ecosystem: devcontainers
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      devcontainers:
+        patterns: ["*"]
+        update-types: [minor, patch]
+      devcontainers-major:
+        patterns: ["*"]
+        update-types: [major]
