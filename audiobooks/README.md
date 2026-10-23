@@ -40,7 +40,7 @@ padding = 3
 
 ### encode_audio_on_nas
 
-`workflows/encode_audio_on_nas.py` creates the missing m4a working copies on the NAS from the source mka files in `source/` folders, using [`mka_to_aac`](#mka_to_aac). Its settings are at the top of the file.
+`workflows/encode_audio_on_nas.py` creates the missing m4a working copies on the NAS from the source mka files in `source/` folders, using [`mka_to_aac`](#mka_to_aac). Its settings are at the top of the file; it needs `roc` on the PATH for the tool.
 
 ## Tools
 
@@ -60,7 +60,11 @@ Requires ffmpeg, metaflac and mkvmerge. Intermediate files go into a hidden fold
 
 ### mka_to_aac
 
-`tools/mka_to_aac.py <input.mka> <bitrate>` encodes AAC HE v2 into an m4a next to the input, keeping the cover. It runs ffmpeg in Docker (`jrottenberg/ffmpeg`), since distribution builds lack libfdk_aac.
+```sh
+tools/mka_to_aac.sh [--no-cover] <input.mka> <bitrate> [<output.m4a>]
+```
+
+Encodes AAC HE v2 (bitrate like `48k`), by default into an m4a next to the input. It tries to keep the cover and falls back to audio only if ffmpeg can't. It runs ffmpeg in Docker (`jrottenberg/ffmpeg:ubuntu`), since distribution builds lack libfdk_aac; that image's ffmpeg 3.1 can't copy the cover, so the fallback currently always kicks in.
 
 ### mka_to_opus
 
